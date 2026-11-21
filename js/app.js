@@ -149,6 +149,8 @@
   // ---------- Nhận giọng nói ----------
   const getSR = () => window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
+  const isBrave = !!navigator.brave;
+  const BRAVE_MSG = "Bạn đang dùng trình duyệt Brave — Brave không hỗ trợ nhận giọng nói. Hãy mở link này bằng Google Chrome.";
 
   function stopListening() {
     if (rec) { try { rec.abort(); } catch {} rec = null; }
@@ -177,6 +179,7 @@
 
     let finalAlts = null;
     let lastInterim = "";
+    let hadError = false;
 
     rec.onstart = () => { setMicUI(true); showResult({ interim: "" }); };
     rec.onresult = (e) => {
@@ -200,7 +203,8 @@
         "network": "Nhận giọng nói cần có mạng internet.",
         "aborted": null
       }[e.error];
-      if (msg !== null) showResult({ error: msg || "Lỗi nhận giọng nói: " + e.error });
+      hadError = true;
+      if (msg !== null) showResult({ error: (isBrave && e.error !== "not-allowed") ? BRAVE_MSG : (msg || "Lỗi nhận giọng nói: " + e.error) });
       finalAlts = null; lastInterim = "";
       rec = null; setMicUI(false);
     };
@@ -208,7 +212,12 @@
       setMicUI(false);
       rec = null;
       const alts = finalAlts || (lastInterim ? [lastInterim] : null);
-      if (!alts) return;
+      if (!alts) {
+        if (!hadError) showResult({ error: isBrave
+          ? BRAVE_MSG
+          : "Không nhận được giọng nói. Thử bấm lại, nói to rõ ngay sau khi nút chuyển đỏ. Nếu vẫn vậy, hãy mở app bằng Google Chrome." });
+        return;
+      }
       let best = null, bestText = "";
       alts.forEach((txt) => {
         const r = score(phrase.en, txt);
@@ -246,7 +255,9 @@
     head.append(el("h1", null, "English Buddy"), el("div", "sub", lesson.title));
     app.append(head);
 
-    if (!getSR()) {
+    if (isBrave) {
+      app.append(el("div", "warn", "⚠️ " + BRAVE_MSG));
+    } else if (!getSR()) {
       app.append(el("div", "warn", "⚠️ Trình duyệt này không hỗ trợ nhận giọng nói. Hãy mở bằng Chrome trên Android."));
     }
 
