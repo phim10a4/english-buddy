@@ -81,3 +81,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(100px); background: #111827; color: #fff;
   padding: 10px 16px; border-radius: 12px; transition: transform 0.25s; pointer-events: none; }
 #toast.show { transform: translateX(-50%) translateY(0); }
+
+.mictest { margin: 0 0 8px; }
+.mictest .btn { width: 100%; }
+.mictest-out { color: var(--muted); font-size: 15px; margin-top: 8px; text-align: center; }
+.levelbar { height: 12px; background: var(--line); border-radius: 6px; overflow: hidden; margin-top: 8px; }
+.levelbar > div { height: 100%; width: 0; background: var(--good); transition: width 0.05s; }
+.miclog { margin-top: 14px; font-size: 12px; color: var(--muted); }
+.miclog pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; font-size: 12px; }

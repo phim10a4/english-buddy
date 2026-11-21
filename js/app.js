@@ -152,6 +152,56 @@
   const isBrave = !!navigator.brave;
   const BRAVE_MSG = "Bạn đang dùng trình duyệt Brave — Brave không hỗ trợ nhận giọng nói. Hãy mở link này bằng Google Chrome.";
 
+  // Nhật ký dò lỗi mic
+  let dlogT0 = 0;
+  function dlogReset() {
+    dlogT0 = performance.now();
+    const p = document.querySelector(".miclog pre");
+    if (p) p.textContent = "";
+  }
+  function dlog(msg) {
+    const p = document.querySelector(".miclog pre");
+    const t = ((performance.now() - dlogT0) / 1000).toFixed(1);
+    if (p) p.textContent += t + "s  " + msg + "\n";
+  }
+
+  // Kiểm tra mic thu được tiếng không (không cần nhận giọng nói)
+  async function micTest(out) {
+    out.textContent = "Đang mở mic… nói gì đó trong 5 giây";
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      out.textContent = "❌ Không mở được mic: " + e.name + ". Hãy cho phép Micrô cho trang này.";
+      return;
+    }
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const an = ctx.createAnalyser();
+    an.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    let max = 0;
+    const bar = el("div", "levelbar"); const fillEl = el("div"); bar.append(fillEl);
+    out.textContent = "Đang nghe… nói gì đó";
+    out.append(bar);
+    const t0 = performance.now();
+    await new Promise((done) => {
+      (function tick() {
+        an.getByteTimeDomainData(buf);
+        let peak = 0;
+        for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+        max = Math.max(max, peak);
+        fillEl.style.width = Math.min(100, peak / 0.8) + "%";
+        if (performance.now() - t0 < 5000) requestAnimationFrame(tick); else done();
+      })();
+    });
+    stream.getTracks().forEach((t) => t.stop());
+    ctx.close();
+    out.textContent = max > 10
+      ? "✅ Mic thu được tiếng (mức " + max + "). Mic tốt."
+      : "⚠️ Mic mở được nhưng gần như không có tiếng (mức " + max + "). Kiểm tra mic hoặc ứng dụng khác đang dùng mic.";
+  }
+
   function stopListening() {
     if (rec) { try { rec.abort(); } catch {} rec = null; }
     setMicUI(false);
@@ -181,8 +231,21 @@
     let lastInterim = "";
     let hadError = false;
 
-    rec.onstart = () => { setMicUI(true); showResult({ interim: "" }); };
+    dlogReset();
+    dlog(navigator.userAgent.replace(/^Mozilla\/5\.0 /, "").slice(0, 120));
+    dlog("bắt đầu · " + (SR === window.webkitSpeechRecognition ? "webkit" : "std") + " · " + rec.lang);
+    rec.onstart = () => { dlog("start"); setMicUI(true); showResult({ interim: "" }); };
+    rec.onaudiostart = () => dlog("audiostart (mic mở)");
+    rec.onsoundstart = () => dlog("soundstart (có âm thanh)");
+    rec.onspeechstart = () => dlog("speechstart (có giọng nói)");
+    rec.onspeechend = () => dlog("speechend");
+    rec.onaudioend = () => dlog("audioend");
+    rec.onnomatch = () => dlog("nomatch");
     rec.onresult = (e) => {
+      try {
+        const r = e.results[e.results.length - 1];
+        dlog("result #" + e.results.length + (r.isFinal ? " final" : " tạm") + ": " + (r[0] && r[0].transcript));
+      } catch (x) { dlog("result (lỗi đọc: " + x.message + ")"); }
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
@@ -203,12 +266,14 @@
         "network": "Nhận giọng nói cần có mạng internet.",
         "aborted": null
       }[e.error];
+      dlog("error: " + e.error + (e.message ? " · " + e.message : ""));
       hadError = true;
       if (msg !== null) showResult({ error: (isBrave && e.error !== "not-allowed") ? BRAVE_MSG : (msg || "Lỗi nhận giọng nói: " + e.error) });
       finalAlts = null; lastInterim = "";
       rec = null; setMicUI(false);
     };
     rec.onend = () => {
+      dlog("end");
       setMicUI(false);
       rec = null;
       const alts = finalAlts || (lastInterim ? [lastInterim] : null);
@@ -269,6 +334,13 @@
     inp.addEventListener("change", () => { state.name = inp.value.trim() || CONFIG.defaultName; persist(); toast("Đã lưu tên"); });
     nameRow.append(inp);
     app.append(nameRow);
+
+    const testBox = el("div", "mictest");
+    const testBtn = el("button", "btn", "🎙️ Kiểm tra mic");
+    const testOut = el("div", "mictest-out");
+    testBtn.addEventListener("click", () => micTest(testOut));
+    testBox.append(testBtn, testOut);
+    app.append(testBox);
 
     lesson.topics.forEach((topic) => {
       const sec = el("section", "topic");
@@ -333,6 +405,10 @@
     const best = state.best[phraseKey()];
     if (best != null) res.append(el("div", "hint", "Điểm cao nhất của bạn: " + best + "%"));
     box.append(res);
+    const log = el("details", "miclog");
+    log.append(el("summary", null, "Nhật ký mic (để dò lỗi)"), el("pre"));
+    log.open = true;
+    box.append(log);
     app.append(box);
 
     const nav = el("div", "row nav");
