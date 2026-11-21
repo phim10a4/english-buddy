@@ -1,347 +1,384 @@
-// English Buddy v0.1 — kho câu mẫu, nghe mẫu, nói và chấm điểm khớp.
+// English Buddy — giao diện.
 (() => {
   "use strict";
 
   // ---------- Lưu trữ trên máy ----------
-  const store = {
-    load() {
-      try { return JSON.parse(localStorage.getItem(CONFIG.storageKey)) || {}; }
-      catch { return {}; }
-    },
-    save(data) {
-      try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(data)); } catch {}
-    }
+  const load = () => { try { return JSON.parse(localStorage.getItem(CONFIG.storageKey)) || {}; } catch { return {}; } };
+  const state = Object.assign(
+    { name: CONFIG.defaultName, best: {}, attempts: 0, rateChat: CONFIG.speech.rateChat, chats: {}, tab: "chat" },
+    load()
+  );
+  const persist = () => {
+    try {
+      const { name, best, attempts, rateChat, chats, tab } = state;
+      localStorage.setItem(CONFIG.storageKey, JSON.stringify({ name, best, attempts, rateChat, chats, tab }));
+    } catch {}
   };
-  const state = Object.assign({ name: CONFIG.defaultName, best: {}, attempts: 0 }, store.load());
-  const persist = () => store.save({ name: state.name, best: state.best, attempts: state.attempts });
 
-  let lesson = null;
-  let current = { topic: null, index: 0 };
+  let lesson = null, cast = null;
 
-  const $ = (s) => document.querySelector(s);
+  // ---------- Tiện ích ----------
+  const $ = (s, root = document) => root.querySelector(s);
   const el = (tag, cls, text) => {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
     if (text != null) e.textContent = text;
     return e;
   };
-  const fill = (s) => s.replaceAll("{name}", state.name || CONFIG.defaultName);
+  const btn = (cls, text, onClick) => { const b = el("button", cls, text); if (onClick) b.addEventListener("click", onClick); return b; };
+  const userName = () => state.name || CONFIG.defaultName;
+  const fill = (s) => String(s || "").replaceAll("{name}", userName());
+  const level = (pct) => (pct >= CONFIG.scoring.good ? "good" : pct >= CONFIG.scoring.ok ? "ok" : "bad");
+  const app = () => $("#app");
 
-  // ---------- Chuẩn hoá chữ để so khớp ----------
-  const CONTRACTIONS = {
-    "i'm": "i am", "you're": "you are", "we're": "we are", "they're": "they are",
-    "he's": "he is", "she's": "she is", "it's": "it is", "that's": "that is",
-    "what's": "what is", "there's": "there is", "here's": "here is", "let's": "let us",
-    "i'll": "i will", "you'll": "you will", "we'll": "we will", "i've": "i have",
-    "you've": "you have", "i'd": "i would", "don't": "do not", "doesn't": "does not",
-    "didn't": "did not", "can't": "can not", "cannot": "can not", "won't": "will not",
-    "isn't": "is not", "aren't": "are not", "wasn't": "was not", "haven't": "have not"
-  };
-  const SMALL = ["zero","one","two","three","four","five","six","seven","eight","nine","ten",
-    "eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"];
-  const TENS = ["","","twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety"];
-  const numToWords = (n) => {
-    if (n < 20) return SMALL[n];
-    if (n < 100) return TENS[Math.floor(n / 10)] + (n % 10 ? " " + SMALL[n % 10] : "");
-    return String(n);
-  };
-  const SAME = { okay: "ok", gonna: "going to", wanna: "want to" };
-
-  function normWord(w) {
-    w = w.toLowerCase().replace(/[’‘`]/g, "'").replace(/[^a-z0-9'\-]/g, "");
-    w = w.replace(/^'+|'+$/g, "");
-    if (!w) return [];
-    if (CONTRACTIONS[w]) return CONTRACTIONS[w].split(" ");
-    if (SAME[w]) return SAME[w].split(" ");
-    if (/^\d+$/.test(w)) return numToWords(parseInt(w, 10)).split(" ");
-    if (w.includes("-")) return w.split("-").filter(Boolean).flatMap(normWord);
-    return [w.replace(/'s$/, "")];
-  }
-  const tokenize = (text) => text.split(/\s+/).flatMap(normWord);
-
-  function lev(a, b) {
-    const dp = Array.from({ length: a.length + 1 }, (_, i) => [i]);
-    for (let j = 1; j <= b.length; j++) dp[0][j] = j;
-    for (let i = 1; i <= a.length; i++)
-      for (let j = 1; j <= b.length; j++)
-        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
-    return dp[a.length][b.length];
-  }
-  // 1 = khớp, 0.75 = gần đúng, 0 = sai
-  function wordMatch(t, s, isWild) {
-    if (isWild) return 1;
-    if (t === s) return 1;
-    if (t.length >= 4 && lev(t, s) <= 1) return 0.75;
-    return 0;
-  }
-
-  // So khớp theo dãy con chung dài nhất (cho phép gần đúng)
-  function align(target, spoken) {
-    const n = target.length, m = spoken.length;
-    const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-    for (let i = 1; i <= n; i++)
-      for (let j = 1; j <= m; j++) {
-        const w = wordMatch(target[i-1].w, spoken[j-1], target[i-1].wild);
-        dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1], w ? dp[i-1][j-1] + w : -1);
-      }
-    const marks = new Array(n).fill(0);
-    let i = n, j = m;
-    while (i > 0 && j > 0) {
-      const w = wordMatch(target[i-1].w, spoken[j-1], target[i-1].wild);
-      if (w && dp[i][j] === dp[i-1][j-1] + w) { marks[i-1] = w; i--; j--; }
-      else if (dp[i-1][j] >= dp[i][j-1]) i--;
-      else j--;
-    }
-    return { marks, total: dp[n][m] };
-  }
-
-  // Câu mẫu → danh sách từ hiển thị, mỗi từ gồm các token chuẩn hoá
-  function buildTarget(rawEn) {
-    const display = [];
-    const tokens = [];
-    rawEn.split(/\s+/).forEach((word) => {
-      const isName = word.includes("{name}");
-      const shown = fill(word);
-      const toks = isName ? normWord(shown).map((w) => ({ w, wild: true })) : normWord(shown).map((w) => ({ w, wild: false }));
-      const idx = toks.map((t) => { tokens.push(t); return tokens.length - 1; });
-      display.push({ text: shown, idx });
-    });
-    return { display, tokens };
-  }
-
-  function score(rawEn, transcript) {
-    const t = buildTarget(rawEn);
-    const { marks, total } = align(t.tokens, tokenize(transcript));
-    const pct = t.tokens.length ? Math.round((total / t.tokens.length) * 100) : 0;
-    const words = t.display.map((d) => {
-      if (!d.idx.length) return { text: d.text, status: "ok" };
-      const vals = d.idx.map((k) => marks[k]);
-      const status = vals.every((v) => v === 1) ? "ok" : vals.every((v) => v > 0) ? "near" : "miss";
-      return { text: d.text, status };
-    });
-    return { pct, words };
-  }
-
-  // ---------- Đọc mẫu ----------
-  let voice = null;
-  function pickVoice() {
-    const vs = speechSynthesis.getVoices().filter((v) => v.lang && v.lang.replace("_", "-").startsWith("en"));
-    voice =
-      vs.find((v) => v.lang.replace("_", "-") === CONFIG.speech.voiceLang && /google/i.test(v.name)) ||
-      vs.find((v) => v.lang.replace("_", "-") === CONFIG.speech.voiceLang) ||
-      vs[0] || null;
-  }
-  if ("speechSynthesis" in window) {
-    pickVoice();
-    speechSynthesis.onvoiceschanged = pickVoice;
-  }
-  function speak(text, rate) {
-    if (!("speechSynthesis" in window)) return toast("Máy không hỗ trợ đọc mẫu.");
-    stopListening();
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = CONFIG.speech.voiceLang;
-    if (voice) u.voice = voice;
-    u.rate = rate;
-    speechSynthesis.speak(u);
-  }
-
-  // ---------- Nhận giọng nói ----------
-  const getSR = () => window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null;
-  const isBrave = !!navigator.brave;
-  const BRAVE_MSG = "Bạn đang dùng trình duyệt Brave — Brave không hỗ trợ nhận giọng nói. Hãy mở link này bằng Google Chrome.";
-
-  // Nhật ký dò lỗi mic
-  let dlogT0 = 0;
-  function dlogReset() {
-    dlogT0 = performance.now();
-    const p = document.querySelector(".miclog pre");
-    if (p) p.textContent = "";
-  }
-  function dlog(msg) {
-    const p = document.querySelector(".miclog pre");
-    const t = ((performance.now() - dlogT0) / 1000).toFixed(1);
-    if (p) p.textContent += t + "s  " + msg + "\n";
-  }
-
-  // Kiểm tra mic thu được tiếng không (không cần nhận giọng nói)
-  async function micTest(out) {
-    out.textContent = "Đang mở mic… nói gì đó trong 5 giây";
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-      out.textContent = "❌ Không mở được mic: " + e.name + ". Hãy cho phép Micrô cho trang này.";
-      return;
-    }
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const an = ctx.createAnalyser();
-    an.fftSize = 512;
-    ctx.createMediaStreamSource(stream).connect(an);
-    const buf = new Uint8Array(an.fftSize);
-    let max = 0;
-    const bar = el("div", "levelbar"); const fillEl = el("div"); bar.append(fillEl);
-    out.textContent = "Đang nghe… nói gì đó";
-    out.append(bar);
-    const t0 = performance.now();
-    await new Promise((done) => {
-      (function tick() {
-        an.getByteTimeDomainData(buf);
-        let peak = 0;
-        for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
-        max = Math.max(max, peak);
-        fillEl.style.width = Math.min(100, peak / 0.8) + "%";
-        if (performance.now() - t0 < 5000) requestAnimationFrame(tick); else done();
-      })();
-    });
-    stream.getTracks().forEach((t) => t.stop());
-    ctx.close();
-    out.textContent = max > 10
-      ? "✅ Mic thu được tiếng (mức " + max + "). Mic tốt."
-      : "⚠️ Mic mở được nhưng gần như không có tiếng (mức " + max + "). Kiểm tra mic hoặc ứng dụng khác đang dùng mic.";
-  }
-
-  function stopListening() {
-    if (rec) { try { rec.abort(); } catch {} rec = null; }
-    setMicUI(false);
-  }
-
-  function setMicUI(on) {
-    const b = $("#btn-mic");
-    if (!b) return;
-    b.classList.toggle("listening", on);
-    b.querySelector(".label").textContent = on ? "Đang nghe… bấm để dừng" : "Bấm để nói";
-  }
-
-  function startListening() {
-    const SR = getSR();
-    if (!SR) return showResult({ error: "Trình duyệt này không hỗ trợ nhận giọng nói. Hãy dùng Chrome trên Android." });
-    if (rec) { rec.stop(); return; }
-    if ("speechSynthesis" in window) speechSynthesis.cancel();
-
-    const phrase = currentPhrase();
-    rec = new SR();
-    rec.lang = CONFIG.speech.listenLang;
-    rec.interimResults = true;
-    rec.continuous = false;
-    rec.maxAlternatives = CONFIG.speech.maxAlternatives;
-
-    let finalAlts = null;
-    let lastInterim = "";
-    let hadError = false;
-
-    dlogReset();
-    dlog(navigator.userAgent.replace(/^Mozilla\/5\.0 /, "").slice(0, 120));
-    dlog("bắt đầu · " + (SR === window.webkitSpeechRecognition ? "webkit" : "std") + " · " + rec.lang);
-    rec.onstart = () => { dlog("start"); setMicUI(true); showResult({ interim: "" }); };
-    rec.onaudiostart = () => dlog("audiostart (mic mở)");
-    rec.onsoundstart = () => dlog("soundstart (có âm thanh)");
-    rec.onspeechstart = () => dlog("speechstart (có giọng nói)");
-    rec.onspeechend = () => dlog("speechend");
-    rec.onaudioend = () => dlog("audioend");
-    rec.onnomatch = () => dlog("nomatch");
-    rec.onresult = (e) => {
-      try {
-        const r = e.results[e.results.length - 1];
-        dlog("result #" + e.results.length + (r.isFinal ? " final" : " tạm") + ": " + (r[0] && r[0].transcript));
-      } catch (x) { dlog("result (lỗi đọc: " + x.message + ")"); }
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) {
-          finalAlts = Array.from(r).map((a) => a.transcript);
-        } else {
-          interim += r[0].transcript;
-        }
-      }
-      if (interim) { lastInterim = interim; showResult({ interim }); }
-    };
-    rec.onerror = (e) => {
-      const msg = {
-        "not-allowed": "Chưa cho phép dùng mic. Bấm biểu tượng bên trái thanh địa chỉ → Quyền → Micrô → Cho phép, rồi thử lại.",
-        "service-not-allowed": "Chưa cho phép dùng mic. Bấm biểu tượng bên trái thanh địa chỉ → Quyền → Micrô → Cho phép.",
-        "no-speech": "Không nghe thấy gì. Thử nói to và rõ hơn, gần điện thoại hơn.",
-        "audio-capture": "Không tìm thấy mic. Kiểm tra mic của máy.",
-        "network": "Nhận giọng nói cần có mạng internet.",
-        "aborted": null
-      }[e.error];
-      dlog("error: " + e.error + (e.message ? " · " + e.message : ""));
-      hadError = true;
-      if (msg !== null) showResult({ error: (isBrave && e.error !== "not-allowed") ? BRAVE_MSG : (msg || "Lỗi nhận giọng nói: " + e.error) });
-      finalAlts = null; lastInterim = "";
-      rec = null; setMicUI(false);
-    };
-    rec.onend = () => {
-      dlog("end");
-      setMicUI(false);
-      rec = null;
-      const alts = finalAlts || (lastInterim ? [lastInterim] : null);
-      if (!alts) {
-        if (!hadError) showResult({ error: isBrave
-          ? BRAVE_MSG
-          : "Không nhận được giọng nói. Thử bấm lại, nói to rõ ngay sau khi nút chuyển đỏ. Nếu vẫn vậy, hãy mở app bằng Google Chrome." });
-        return;
-      }
-      let best = null, bestText = "";
-      alts.forEach((txt) => {
-        const r = score(phrase.en, txt);
-        if (!best || r.pct > best.pct) { best = r; bestText = txt; }
-      });
-      state.attempts++;
-      const key = phraseKey();
-      if (!state.best[key] || best.pct > state.best[key]) state.best[key] = best.pct;
-      persist();
-      showResult({ result: best, heard: bestText });
-    };
-
-    try { rec.start(); } catch (err) { rec = null; showResult({ error: "Không bật được mic: " + err.message }); }
-  }
-
-  // ---------- Giao diện ----------
   function toast(msg) {
     const t = $("#toast");
     t.textContent = msg;
     t.classList.add("show");
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.classList.remove("show"), 2500);
+    toast._t = setTimeout(() => t.classList.remove("show"), 2600);
   }
 
-  const phraseKey = () => current.topic.id + "-" + current.index;
-  const currentPhrase = () => current.topic.phrases[current.index];
-  const level = (pct) => (pct >= CONFIG.scoring.good ? "good" : pct >= CONFIG.scoring.ok ? "ok" : "bad");
+  // ---------- Nút mic dùng chung ----------
+  function micButton(label, cls = "btn-mic") {
+    const b = el("button", cls);
+    b.append(el("span", "mic-icon", "🎤"), el("span", "label", label));
+    b.dataset.label = label;
+    return b;
+  }
+  function setMic(b, on) {
+    b.classList.toggle("listening", on);
+    $(".label", b).textContent = on ? "Đang nghe… bấm để dừng" : b.dataset.label;
+  }
+  // Bấm lần 1: nghe. Bấm khi đang nghe: dừng và lấy kết quả.
+  async function listenWith(b, opts) {
+    if (Speech.isListening()) { Speech.finish(); return null; }
+    setMic(b, true);
+    const r = await Speech.listen(opts);
+    setMic(b, false);
+    return r;
+  }
 
-  function renderHome() {
-    stopListening();
-    const app = $("#app");
-    app.innerHTML = "";
+  // ---------- Khối luyện một câu: nghe mẫu, nói, chấm ----------
+  // opts: { wild, voiceLang, onScore(pct), onSend(text), sendLabel, big }
+  function practiceWidget(text, opts = {}) {
+    const box = el("div", "pw");
+    const sentence = el("div", opts.big ? "big-en" : "pw-en");
+    const paint = (words) => {
+      sentence.innerHTML = "";
+      (words || text.split(/\s+/).map((t) => ({ text: t }))).forEach((w) => sentence.append(el("span", "w " + (w.status || ""), w.text), " "));
+    };
+    paint();
+    box.append(sentence);
+    if (opts.vi) box.append(el("div", opts.big ? "big-vi" : "pw-vi", opts.vi));
 
-    const head = el("header", "top");
-    head.append(el("h1", null, "English Buddy"), el("div", "sub", lesson.title));
-    app.append(head);
+    const row = el("div", "row");
+    const voice = { lang: opts.voiceLang || CONFIG.speech.voiceLang };
+    row.append(
+      btn("btn btn-listen", "🔊 Nghe", () => Speech.speak(text, { ...voice, rate: CONFIG.speech.rateNormal })),
+      btn("btn btn-listen", "🐢 Chậm", () => Speech.speak(text, { ...voice, rate: CONFIG.speech.rateSlow }))
+    );
+    box.append(row);
 
-    if (isBrave) {
-      app.append(el("div", "warn", "⚠️ " + BRAVE_MSG));
-    } else if (!getSR()) {
-      app.append(el("div", "warn", "⚠️ Trình duyệt này không hỗ trợ nhận giọng nói. Hãy mở bằng Chrome trên Android."));
+    const mic = micButton(opts.big ? "Bấm để nói" : "Nói thử câu này", opts.big ? "btn-mic" : "btn-mic small");
+    const res = el("div", "result");
+    if (opts.hint) res.append(el("div", "hint", opts.hint));
+    mic.addEventListener("click", async () => {
+      res.innerHTML = "";
+      res.append(el("div", "hint", "Mời bạn nói…"));
+      const r = await listenWith(mic, {
+        lang: CONFIG.speech.listenLang,
+        onInterim: (t) => { res.innerHTML = ""; res.append(el("div", "hint", "Đang nghe: " + t)); }
+      });
+      if (!r) return;
+      res.innerHTML = "";
+      if (r.cancelled) return;
+      if (r.error) { res.append(el("div", "err", r.error)); return; }
+      const s = Speech.bestScore(text, r.alts, opts.wild || []);
+      paint(s.words);
+      const lv = level(s.pct);
+      res.append(
+        el("div", "score " + lv, s.pct + "%"),
+        el("div", "msg", lv === "good" ? "Tuyệt vời! 🎉" : lv === "ok" ? "Khá tốt! Thử lại các từ màu đỏ nhé." : "Nghe mẫu lại rồi thử lần nữa nhé."),
+        el("div", "heard", "App nghe được: “" + s.heard + "”")
+      );
+      const legend = el("div", "legend");
+      legend.innerHTML = '<span class="w ok">xanh</span> đúng · <span class="w near">vàng</span> gần đúng · <span class="w miss">đỏ</span> sai/thiếu';
+      res.append(legend);
+      opts.onScore && opts.onScore(s.pct);
+    });
+    box.append(mic, res);
+    if (opts.onSend) box.append(btn("btn btn-send", opts.sendLabel || "Gửi câu này ➤", () => opts.onSend(text)));
+    return box;
+  }
+
+  // ---------- Thanh tab ----------
+  function header(active) {
+    const h = el("header", "top");
+    const title = el("div", "brand");
+    title.append(el("h1", null, "English Buddy"), el("span", "ver", "v" + CONFIG.version));
+    const tabs = el("nav", "tabs");
+    [["chat", "💬 Trò chuyện"], ["phrases", "📚 Câu mẫu"], ["settings", "⚙️ Cài đặt"]].forEach(([id, label]) => {
+      tabs.append(btn("tab" + (id === active ? " active" : ""), label, () => { state.tab = id; persist(); render(); }));
+    });
+    h.append(title, tabs);
+    return h;
+  }
+
+  function render() {
+    Speech.stop();
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    ({ chat: viewChatList, phrases: viewPhrases, settings: viewSettings }[state.tab] || viewChatList)();
+    window.scrollTo(0, 0);
+  }
+
+  // ---------- Tab: Trò chuyện ----------
+  function viewChatList() {
+    const a = app();
+    a.innerHTML = "";
+    a.append(header("chat"));
+    if (!AI.hasKey()) {
+      const w = el("div", "warn");
+      w.append(el("div", null, "🔑 Cần Gemini API key (miễn phí) để trò chuyện với nhân vật."));
+      w.append(btn("btn btn-small", "Mở Cài đặt để dán key", () => { state.tab = "settings"; persist(); render(); }));
+      a.append(w);
     }
+    a.append(el("p", "sub", "Chọn người để nói chuyện. Họ nói chậm, đơn giản và hỏi về Việt Nam."));
+    cast.characters.forEach((ch) => {
+      const card = btn("card char", null, () => openChat(ch));
+      const has = (state.chats[ch.id] || []).length > 1;
+      card.append(el("span", "flag", ch.flag));
+      const info = el("div");
+      info.append(el("div", "en", ch.name + " · " + ch.country), el("div", "vi", ch.tagline));
+      card.append(info);
+      if (has) card.append(el("span", "badge cont", "Tiếp tục"));
+      a.append(card);
+    });
+    a.append(el("footer", "foot", "Đã dùng " + AI.usage() + " lượt AI hôm nay"));
+  }
 
-    const nameRow = el("label", "name-row");
-    nameRow.append(el("span", null, "Tên bạn dùng trong câu mẫu:"));
+  // ---------- Màn trò chuyện ----------
+  let chat = null; // { ch, msgs, busy }
+
+  function openChat(ch) {
+    Speech.stop();
+    const msgs = state.chats[ch.id] || [];
+    if (!msgs.length) {
+      msgs.push({ role: "ai", en: ch.opening.en, vi: ch.opening.vi, suggestions: ch.opening.suggestions });
+      state.chats[ch.id] = msgs;
+      persist();
+    }
+    chat = { ch, msgs, busy: false };
+    viewChat();
+    const last = msgs[msgs.length - 1];
+    if (msgs.length === 1) say(fill(last.en));
+  }
+
+  const say = (text) => Speech.speak(text, { lang: chat.ch.voiceLang, rate: state.rateChat });
+  const saveChat = () => { state.chats[chat.ch.id] = chat.msgs.slice(-60); persist(); };
+
+  function viewChat() {
+    const { ch } = chat;
+    const a = app();
+    a.innerHTML = "";
+    a.classList.add("chat-mode");
+
+    const bar = el("div", "bar chatbar");
+    bar.append(
+      btn("btn-back", "←", () => { a.classList.remove("chat-mode"); chat = null; render(); }),
+      el("span", "who", ch.flag + " " + ch.name),
+      el("span", "usage", "AI hôm nay: " + AI.usage()),
+      btn("btn-icon", "↺", () => {
+        if (!confirm("Bắt đầu cuộc trò chuyện mới với " + ch.name + "?")) return;
+        state.chats[ch.id] = [];
+        persist();
+        openChat(ch);
+      })
+    );
+    a.append(bar);
+
+    const list = el("div", "msgs");
+    list.id = "msgs";
+    a.append(list);
+
+    const dock = el("div", "dock");
+    const panel = el("div", "panel");
+    panel.id = "panel";
+    const tools = el("div", "row");
+    tools.append(
+      btn("btn btn-tool", "💡 Gợi ý", showSuggestions),
+      btn("btn btn-tool", "🇻🇳 Nói tiếng Việt", (e) => vietMode(e.currentTarget))
+    );
+    const mic = micButton("Bấm để nói tiếng Anh");
+    mic.addEventListener("click", () => speakTurn(mic));
+
+    const typeRow = el("form", "typerow");
     const inp = el("input");
-    inp.value = state.name;
-    inp.maxLength = 20;
-    inp.addEventListener("change", () => { state.name = inp.value.trim() || CONFIG.defaultName; persist(); toast("Đã lưu tên"); });
-    nameRow.append(inp);
-    app.append(nameRow);
+    inp.placeholder = "…hoặc gõ tiếng Anh";
+    inp.enterKeyHint = "send";
+    typeRow.append(inp, el("button", "btn btn-small", "➤"));
+    typeRow.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const t = inp.value.trim();
+      if (!t) return;
+      inp.value = "";
+      inp.blur();
+      sendUser(t);
+    });
 
-    const testBox = el("div", "mictest");
-    const testBtn = el("button", "btn", "🎙️ Kiểm tra mic");
-    const testOut = el("div", "mictest-out");
-    testBtn.addEventListener("click", () => micTest(testOut));
-    testBox.append(testBtn, testOut);
-    app.append(testBox);
+    dock.append(panel, tools, mic, typeRow);
+    a.append(dock);
+    renderMsgs();
+  }
 
+  function renderMsgs() {
+    const list = $("#msgs");
+    if (!list) return;
+    list.innerHTML = "";
+    chat.msgs.forEach((m) => {
+      const b = el("div", "bubble " + m.role);
+      b.append(el("div", "txt", fill(m.en)));
+      if (m.role === "ai") {
+        const acts = el("div", "acts");
+        const vi = el("div", "vi hidden", fill(m.vi || ""));
+        acts.append(
+          btn("chip", "🔊 Nghe lại", () => say(fill(m.en))),
+          btn("chip", "🐢 Chậm", () => Speech.speak(fill(m.en), { lang: chat.ch.voiceLang, rate: CONFIG.speech.rateSlow })),
+          btn("chip", "Dịch", () => vi.classList.toggle("hidden"))
+        );
+        b.append(acts, vi);
+      }
+      list.append(b);
+    });
+    if (chat.busy) list.append(el("div", "bubble ai typing", chat.ch.name + " đang trả lời…"));
+    const u = $(".usage");
+    if (u) u.textContent = "AI hôm nay: " + AI.usage();
+    requestAnimationFrame(() => list.lastElementChild && list.lastElementChild.scrollIntoView({ block: "end", behavior: "smooth" }));
+  }
+
+  function panelSet(...nodes) {
+    const p = $("#panel");
+    if (!p) return null;
+    p.innerHTML = "";
+    if (nodes.length) {
+      const close = btn("panel-close", "✕", () => panelSet());
+      p.append(close, ...nodes);
+    }
+    p.classList.toggle("open", nodes.length > 0);
+    return p;
+  }
+
+  async function speakTurn(mic) {
+    if (chat.busy) return;
+    panelSet();
+    const r = await listenWith(mic, {
+      lang: CONFIG.speech.listenLang,
+      onInterim: (t) => panelSet(el("div", "hint", "Đang nghe: " + t))
+    });
+    if (!r) return;
+    if (r.cancelled) return panelSet();
+    if (r.error) return panelSet(el("div", "err", r.error));
+    panelSet();
+    sendUser(r.alts[0]);
+  }
+
+  async function sendUser(text) {
+    if (chat.busy) return;
+    chat.msgs.push({ role: "me", en: text });
+    saveChat();
+    await askAI();
+  }
+
+  async function askAI() {
+    if (!AI.hasKey()) {
+      renderMsgs();
+      return panelSet(el("div", "err", "Chưa có API key."), btn("btn btn-small", "Mở Cài đặt", () => { app().classList.remove("chat-mode"); state.tab = "settings"; render(); }));
+    }
+    chat.busy = true;
+    renderMsgs();
+    const c = chat;
+    try {
+      const r = await AI.chatTurn(c.ch, c.msgs, userName());
+      c.msgs.push({ role: "ai", en: r.en, vi: r.vi, suggestions: r.suggestions });
+      c.busy = false;
+      if (chat !== c) { state.chats[c.ch.id] = c.msgs; persist(); return; }
+      saveChat();
+      renderMsgs();
+      say(r.en);
+    } catch (e) {
+      c.busy = false;
+      if (chat !== c) return;
+      renderMsgs();
+      panelSet(el("div", "err", e.message), btn("btn btn-small", "Thử lại", () => { panelSet(); askAI(); }));
+    }
+  }
+
+  function showSuggestions() {
+    const last = [...chat.msgs].reverse().find((m) => m.role === "ai");
+    const list = (last && last.suggestions) || [];
+    if (!list.length) return panelSet(el("div", "hint", "Chưa có gợi ý cho câu này."));
+    const wrap = el("div", "sugg");
+    wrap.append(el("div", "panel-title", "💡 Bạn có thể nói (dễ → khó):"));
+    const levels = ["Dễ", "Vừa", "Khó"];
+    list.forEach((s, i) => {
+      const item = el("div", "sugg-item");
+      const head = btn("sugg-head", null, () => {
+        const open = item.classList.toggle("open");
+        if (open && !$(".pw", item)) {
+          item.append(practiceWidget(fill(s.en), {
+            wild: [userName()], voiceLang: CONFIG.speech.voiceLang,
+            onSend: (t) => { panelSet(); sendUser(t); }
+          }));
+        }
+      });
+      head.append(el("span", "lvl l" + i, levels[i] || ""), el("span", "en", fill(s.en)), el("span", "vi", fill(s.vi)));
+      item.append(head);
+      wrap.append(item);
+    });
+    panelSet(wrap);
+  }
+
+  async function vietMode(b) {
+    if (chat.busy) return;
+    if (Speech.isListening()) { Speech.finish(); return; }
+    b.classList.add("listening");
+    const old = b.textContent;
+    b.textContent = "🇻🇳 Đang nghe tiếng Việt…";
+    panelSet(el("div", "hint", "Nói câu bạn muốn nói bằng tiếng Việt…"));
+    const r = await Speech.listen({
+      lang: CONFIG.speech.vietLang,
+      onInterim: (t) => panelSet(el("div", "hint", "Bạn nói: " + t))
+    });
+    b.classList.remove("listening");
+    b.textContent = old;
+    if (r.cancelled) return panelSet();
+    if (r.error) return panelSet(el("div", "err", r.error));
+    const viText = r.alts[0];
+    panelSet(el("div", "hint", "Bạn muốn nói: “" + viText + "”"), el("div", "hint", "Đang tìm cách nói tiếng Anh…"));
+    try {
+      const h = await AI.vietHelp(chat.ch, chat.msgs, viText, userName());
+      const wrap = el("div", "help");
+      wrap.append(el("div", "panel-title", "🇻🇳 “" + viText + "”"));
+      wrap.append(el("div", "help-label", "Cách nói đơn giản"));
+      wrap.append(practiceWidget(h.simple, { onSend: (t) => { panelSet(); sendUser(t); } }));
+      if (h.standard && h.standard.toLowerCase() !== h.simple.toLowerCase()) {
+        wrap.append(el("div", "help-label", "Cách nói tự nhiên"));
+        wrap.append(practiceWidget(h.standard, { onSend: (t) => { panelSet(); sendUser(t); } }));
+      }
+      if (h.note) wrap.append(el("div", "note", "💬 " + h.note));
+      panelSet(wrap);
+      renderMsgs();
+      Speech.speak(h.simple, { rate: CONFIG.speech.rateNormal });
+    } catch (e) {
+      panelSet(el("div", "err", e.message));
+    }
+  }
+
+  // ---------- Tab: Câu mẫu ----------
+  function viewPhrases() {
+    const a = app();
+    a.innerHTML = "";
+    a.append(header("phrases"), el("p", "sub", lesson.title));
     lesson.topics.forEach((topic) => {
       const sec = el("section", "topic");
       const done = topic.phrases.filter((_, i) => (state.best[topic.id + "-" + i] || 0) >= CONFIG.scoring.good).length;
@@ -349,110 +386,152 @@
       h.append(el("span", "icon", topic.icon), el("span", null, topic.name), el("span", "count", done + "/" + topic.phrases.length));
       sec.append(h);
       topic.phrases.forEach((p, i) => {
-        const card = el("button", "card");
+        const card = btn("card", null, () => viewPractice(topic, i));
         const best = state.best[topic.id + "-" + i];
         card.append(el("div", "en", fill(p.en)), el("div", "vi", fill(p.vi)));
         if (best != null) card.append(el("span", "badge " + level(best), best + "%"));
-        card.addEventListener("click", () => openPractice(topic, i));
         sec.append(card);
       });
-      app.append(sec);
+      a.append(sec);
     });
-
-    app.append(el("footer", "foot", "v" + CONFIG.version + " · đã luyện " + state.attempts + " lượt"));
-    window.scrollTo(0, 0);
+    a.append(el("footer", "foot", "Đã luyện " + state.attempts + " lượt"));
   }
 
-  function openPractice(topic, index) {
-    current = { topic, index };
-    renderPractice();
-  }
-
-  function renderPractice() {
-    stopListening();
-    const p = currentPhrase();
-    const app = $("#app");
-    app.innerHTML = "";
-
+  function viewPractice(topic, index) {
+    Speech.stop();
+    const p = topic.phrases[index];
+    const key = topic.id + "-" + index;
+    const a = app();
+    a.innerHTML = "";
     const bar = el("div", "bar");
-    const back = el("button", "btn-back", "← Danh sách");
-    back.addEventListener("click", renderHome);
-    bar.append(back, el("span", "pos", current.topic.icon + " " + (current.index + 1) + "/" + current.topic.phrases.length));
-    app.append(bar);
+    bar.append(btn("btn-back", "← Danh sách", render), el("span", "pos", topic.icon + " " + (index + 1) + "/" + topic.phrases.length));
+    a.append(bar);
 
-    const box = el("div", "practice");
-    const en = el("div", "big-en");
-    en.id = "sentence";
-    fill(p.en).split(/\s+/).forEach((w) => { en.append(el("span", "w", w), " "); });
-    box.append(en, el("div", "big-vi", fill(p.vi)));
-
-    const listen = el("div", "row");
-    const b1 = el("button", "btn btn-listen", "🔊 Nghe mẫu");
-    b1.addEventListener("click", () => speak(fill(p.en), CONFIG.speech.rateNormal));
-    const b2 = el("button", "btn btn-listen", "🐢 Nghe chậm");
-    b2.addEventListener("click", () => speak(fill(p.en), CONFIG.speech.rateSlow));
-    listen.append(b1, b2);
-    box.append(listen);
-
-    const mic = el("button", "btn-mic");
-    mic.id = "btn-mic";
-    mic.append(el("span", "mic-icon", "🎤"), el("span", "label", "Bấm để nói"));
-    mic.addEventListener("click", startListening);
-    box.append(mic);
-
-    const res = el("div", "result");
-    res.id = "result";
-    const best = state.best[phraseKey()];
-    if (best != null) res.append(el("div", "hint", "Điểm cao nhất của bạn: " + best + "%"));
-    box.append(res);
-    const log = el("details", "miclog");
-    log.append(el("summary", null, "Nhật ký mic (để dò lỗi)"), el("pre"));
-    log.open = true;
-    box.append(log);
-    app.append(box);
+    const best = state.best[key];
+    const card = el("div", "practice");
+    card.append(practiceWidget(fill(p.en), {
+      big: true, vi: fill(p.vi), wild: [userName()],
+      hint: best != null ? "Điểm cao nhất của bạn: " + best + "%" : null,
+      onScore: (pct) => {
+        state.attempts++;
+        if (!state.best[key] || pct > state.best[key]) state.best[key] = pct;
+        persist();
+      }
+    }));
+    a.append(card);
 
     const nav = el("div", "row nav");
-    const prev = el("button", "btn", "‹ Câu trước");
-    prev.disabled = current.index === 0;
-    prev.addEventListener("click", () => openPractice(current.topic, current.index - 1));
-    const next = el("button", "btn", "Câu sau ›");
-    next.disabled = current.index >= current.topic.phrases.length - 1;
-    next.addEventListener("click", () => openPractice(current.topic, current.index + 1));
+    const prev = btn("btn", "‹ Câu trước", () => viewPractice(topic, index - 1));
+    prev.disabled = index === 0;
+    const next = btn("btn", "Câu sau ›", () => viewPractice(topic, index + 1));
+    next.disabled = index >= topic.phrases.length - 1;
     nav.append(prev, next);
-    app.append(nav);
+    a.append(nav);
     window.scrollTo(0, 0);
   }
 
-  function showResult(r) {
-    const box = $("#result");
-    if (!box) return;
-    box.innerHTML = "";
-    const sentence = $("#sentence");
+  // ---------- Tab: Cài đặt ----------
+  function viewSettings() {
+    const a = app();
+    a.innerHTML = "";
+    a.append(header("settings"));
 
-    if (r.error) { box.append(el("div", "err", r.error)); return; }
-    if (r.interim != null) {
-      box.append(el("div", "hint", r.interim ? "Đang nghe: " + r.interim : "Mời bạn nói câu trên…"));
-      return;
+    // API key
+    const sKey = el("section", "set");
+    sKey.append(el("h2", null, "🔑 API key (" + AI.providerLabel() + ")"));
+    const status = el("div", "hint left");
+    const showStatus = () => {
+      status.textContent = AI.hasKey() ? "✅ Đã có key trên máy này · model: " + AI.model() : "Chưa có key.";
+    };
+    showStatus();
+    const keyRow = el("div", "keyrow");
+    const inp = el("input");
+    inp.type = "password";
+    inp.placeholder = AI.hasKey() ? "•••••••• (đã lưu) — dán key mới để thay" : "Dán key vào đây (AIza…)";
+    inp.autocomplete = "off";
+    inp.spellcheck = false;
+    const eye = btn("btn btn-small", "👁", () => { inp.type = inp.type === "password" ? "text" : "password"; });
+    keyRow.append(inp, eye);
+    const save = btn("btn btn-primary", "Lưu & kiểm tra key", async () => {
+      const v = inp.value.trim();
+      if (!v) return toast("Dán key trước đã");
+      save.disabled = true;
+      status.textContent = "Đang kiểm tra key…";
+      try {
+        const m = await AI.saveKey(v);
+        inp.value = "";
+        inp.placeholder = "•••••••• (đã lưu) — dán key mới để thay";
+        showStatus();
+        toast("Key dùng được! Model: " + m);
+      } catch (e) {
+        status.textContent = "❌ " + e.message;
+      }
+      save.disabled = false;
+    });
+    const del = btn("btn btn-small danger", "Xoá key khỏi máy", async () => {
+      if (!confirm("Xoá API key khỏi điện thoại này?")) return;
+      await AI.saveKey("");
+      showStatus();
+      toast("Đã xoá key");
+    });
+    const how = el("details", "how");
+    how.append(el("summary", null, "Cách lấy key miễn phí"));
+    const ol = el("ol");
+    [
+      "Mở " + AI.keyUrl() + " và đăng nhập Google.",
+      "Bấm “Create API key” (chọn project mặc định nếu được hỏi).",
+      "Copy chuỗi bắt đầu bằng AIza…, quay lại đây dán vào ô trên, bấm “Lưu & kiểm tra”."
+    ].forEach((t) => ol.append(el("li", null, t)));
+    const link = el("a", null, "Mở trang lấy key ↗");
+    link.href = AI.keyUrl();
+    link.target = "_blank";
+    link.rel = "noopener";
+    how.append(ol, link, el("div", "hint left", "Key chỉ lưu trên máy này, không gửi đi đâu ngoài Google."));
+    sKey.append(status, keyRow, save, del, how, el("div", "hint left", "Đã dùng hôm nay: " + AI.usage() + " lượt AI"));
+    a.append(sKey);
+
+    // Tên
+    const sName = el("section", "set");
+    sName.append(el("h2", null, "🙂 Tên của bạn"));
+    const n = el("input");
+    n.value = state.name;
+    n.maxLength = 20;
+    n.addEventListener("change", () => { state.name = n.value.trim() || CONFIG.defaultName; persist(); toast("Đã lưu tên"); });
+    sName.append(n, el("div", "hint left", "Dùng trong câu mẫu và để nhân vật gọi tên bạn."));
+    a.append(sName);
+
+    // Tốc độ nói
+    const sRate = el("section", "set");
+    sRate.append(el("h2", null, "🐢 Tốc độ nhân vật nói"));
+    const r = el("input");
+    r.type = "range"; r.min = "0.5"; r.max = "1.1"; r.step = "0.05"; r.value = state.rateChat;
+    const rv = el("span", "hint", "×" + state.rateChat);
+    r.addEventListener("input", () => { rv.textContent = "×" + r.value; });
+    r.addEventListener("change", () => { state.rateChat = parseFloat(r.value); persist(); Speech.speak("Hello! How are you today?", { rate: state.rateChat }); });
+    sRate.append(r, rv);
+    a.append(sRate);
+
+    // Mic
+    const sMic = el("section", "set");
+    sMic.append(el("h2", null, "🎙️ Mic"));
+    const out = el("div", "hint left");
+    sMic.append(btn("btn", "Kiểm tra mic", () => Speech.micTest(out)), out);
+    if (Speech.lastLog.length) {
+      const d = el("details", "how");
+      d.append(el("summary", null, "Nhật ký nhận giọng lần gần nhất"), el("pre", "log", Speech.lastLog.join("\n")));
+      sMic.append(d);
     }
-    const { result, heard } = r;
-    sentence.innerHTML = "";
-    result.words.forEach((w) => { sentence.append(el("span", "w " + w.status, w.text), " "); });
-
-    const lv = level(result.pct);
-    const sc = el("div", "score " + lv, result.pct + "%");
-    const msg = lv === "good" ? "Tuyệt vời! 🎉" : lv === "ok" ? "Khá tốt! Thử lại các từ màu đỏ nhé." : "Nghe mẫu lại rồi thử lần nữa nhé.";
-    box.append(sc, el("div", "msg", msg), el("div", "heard", "App nghe được: “" + heard + "”"));
-    const legend = el("div", "legend");
-    legend.innerHTML = '<span class="w ok">xanh</span> đúng · <span class="w near">vàng</span> gần đúng · <span class="w miss">đỏ</span> sai/thiếu';
-    box.append(legend);
+    a.append(sMic);
+    a.append(el("footer", "foot", "English Buddy v" + CONFIG.version + " · dữ liệu lưu trên máy này"));
   }
 
   // ---------- Khởi động ----------
-  fetch(CONFIG.phrasesFile)
-    .then((r) => r.json())
-    .then((data) => { lesson = data; renderHome(); })
-    .catch(() => { $("#app").innerHTML = '<div class="err">Không tải được bài học. Kiểm tra mạng rồi tải lại trang.</div>'; });
+  Promise.all([
+    fetch(CONFIG.phrasesFile).then((r) => r.json()),
+    fetch(CONFIG.charactersFile).then((r) => r.json())
+  ])
+    .then(([p, c]) => { lesson = p; cast = c; render(); })
+    .catch(() => { app().innerHTML = '<div class="err">Không tải được dữ liệu. Kiểm tra mạng rồi tải lại trang.</div>'; });
 
-  // để kiểm thử
-  window.__eb = { score, tokenize };
+  AI.onUsage((n) => { const u = $(".usage"); if (u) u.textContent = "AI hôm nay: " + n; });
 })();

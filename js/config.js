@@ -1,21 +1,43 @@
 // Mọi thông số của app gom vào đây.
 const CONFIG = {
-  version: "0.1",
-  defaultName: "Nam",            // tên mặc định trong câu mẫu, đổi được trong app
+  version: "0.2",
+  defaultName: "Nam",            // tên mặc định trong câu mẫu, đổi được trong Cài đặt
   phrasesFile: "data/phrases.json",
+  charactersFile: "data/characters.json",
+
+  // ---- AI: đổi nhà cung cấp bằng 1 dòng ----
+  ai: {
+    provider: "gemini",          // tên nhà cung cấp, xem js/ai.js
+    temperature: 0.8,
+    historyTurns: 16,            // số lượt gần nhất gửi kèm để AI nhớ ngữ cảnh
+    gemini: {
+      model: "gemini-2.5-flash-lite",   // model ưu tiên; nếu không có, app tự chọn bản Flash-Lite mới nhất
+      autoPickModel: true,
+      endpoint: "https://generativelanguage.googleapis.com/v1beta",
+      keyUrl: "https://aistudio.google.com/apikey"
+    }
+  },
+
+  learner: {
+    level: "A2 (simple sentences)",
+    about: "an accountant at a food supply company in Nha Trang, Vietnam. Likes food, the gym, cultural differences between countries and Vietnam, business, trading and investing."
+  },
 
   speech: {
-    listenLang: "en-US",         // ngôn ngữ nhận giọng nói
-    voiceLang: "en-US",          // giọng đọc mẫu
-    rateNormal: 0.9,             // tốc độ đọc bình thường
+    listenLang: "en-US",         // ngôn ngữ nhận giọng tiếng Anh
+    vietLang: "vi-VN",           // nhận giọng khi bấm "Nói tiếng Việt"
+    voiceLang: "en-US",          // giọng đọc mẫu mặc định
+    rateNormal: 0.9,             // tốc độ đọc câu mẫu
     rateSlow: 0.65,              // tốc độ đọc chậm
+    rateChat: 0.85,              // tốc độ nhân vật nói (chỉnh trong Cài đặt)
     maxAlternatives: 5
   },
 
   scoring: {
-    good: 85,                    // >= : màu xanh
-    ok: 60                       // >= : màu vàng, dưới: đỏ
+    good: 85,                    // >= : xanh
+    ok: 60                       // >= : vàng, dưới: đỏ
   },
 
-  storageKey: "englishBuddy"     // khoá lưu dữ liệu trên máy
+  storageKey: "englishBuddy",    // khoá lưu dữ liệu trên máy
+  keyStoragePrefix: "englishBuddy.apiKey."   // API key lưu riêng trên máy, KHÔNG BAO GIỜ ghi vào code
 };

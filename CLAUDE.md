@@ -45,9 +45,17 @@
 - Dữ liệu lưu trên máy (localStorage).
 - **KHÔNG BAO GIỜ ghi API key vào code hay commit** — key chỉ lưu trên điện thoại (localStorage).
 - Repo công khai `english-buddy`, host bằng **GitHub Pages** (nhánh `main`, thư mục gốc).
-- Người dùng có cả Brave trên điện thoại: Brave KHÔNG hỗ trợ nhận giọng nói (Web Speech) → luôn dùng Chrome. App tự cảnh báo khi phát hiện Brave.
 - Khi sửa JS/CSS, tăng `?v=` trong index.html để điện thoại không dùng bản cũ trong bộ nhớ đệm.
 - Nhận giọng nói: Web Speech API (`webkitSpeechRecognition`), đọc mẫu: `speechSynthesis`. Cần HTTPS (GitHub Pages ok) hoặc localhost.
+- Điện thoại người dùng (Android 10): nhận giọng nói từng không chạy (chỉ có "start", không "audiostart") cho tới khi
+  dịch vụ giọng nói Google trên máy hoạt động; sau đó chạy cả trên Chrome lẫn Brave. Nếu tái diễn: kiểm tra
+  "Speech Services by Google"/app Google. Phương án dự phòng chưa làm: ghi âm (MediaRecorder) gửi Gemini chuyển thành chữ.
+
+## Cấu trúc code
+- `index.html` → nạp `js/config.js` (CONFIG), `js/speech.js` (đọc/nghe/chấm điểm), `js/ai.js` (nhà cung cấp AI + lời nhắc nhân vật + đếm lượt), `js/app.js` (giao diện).
+- `data/phrases.json` (câu mẫu), `data/characters.json` (nhân vật: persona, giọng, câu mở đầu + gợi ý).
+- Gemini: key trong localStorage `englishBuddy.apiKey.gemini`; app tự chọn model Flash-Lite qua ListModels nếu model trong CONFIG không có. Trả JSON theo responseSchema; mỗi lượt chat trả luôn 3 gợi ý (nút Gợi ý không tốn lượt).
+- Mở đầu cuộc trò chuyện lấy từ JSON (không tốn lượt API).
 
 ## Lưu ý máy Windows của người dùng
 - Trong `C:\Users\Admin\OneDrive` có HAI thư mục tên "Tài liệu" (khác kiểu mã hoá dấu Unicode). Repo thật nằm trong thư mục
@@ -61,4 +69,6 @@
 ## Nhật ký
 - Repo: https://github.com/phim10a4/english-buddy — App: https://phim10a4.github.io/english-buddy/
 - Git trong repo dùng email noreply của GitHub (không dùng email cá nhân).
-- 2026-11-21: tạo CLAUDE.md, repo, làm v0.1, bật GitHub Pages. Đang chờ người dùng xác nhận mic trên Android → rồi làm v0.2.
+- 2026-11-21: tạo CLAUDE.md, repo, làm v0.1, bật GitHub Pages. Mic xác nhận chạy trên Android.
+- 2026-11-21: làm v0.2 (tab Trò chuyện/Câu mẫu/Cài đặt; Mike/Yuki/Tom; Gợi ý; Nói tiếng Việt; đếm lượt AI; dán key).
+  Đã thử với Gemini giả lập; CHƯA thử với key thật → buổi sau hỏi người dùng kết quả. Tiếp theo: v0.3.

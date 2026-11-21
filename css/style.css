@@ -29,8 +29,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .err { background: #fee2e2; color: #991b1b; padding: 12px; border-radius: 12px; }
 .hint { color: var(--muted); text-align: center; padding: 8px; }
 
-.name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 16px; color: var(--muted); font-size: 15px; }
-.name-row input { flex: 1; min-width: 120px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 16px; }
 
 .topic { margin: 20px 0; }
 .topic h2 { display: flex; align-items: center; gap: 8px; font-size: 19px; margin: 0 0 8px; }
@@ -82,10 +80,81 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 10px 16px; border-radius: 12px; transition: transform 0.25s; pointer-events: none; }
 #toast.show { transform: translateX(-50%) translateY(0); }
 
-.mictest { margin: 0 0 8px; }
-.mictest .btn { width: 100%; }
-.mictest-out { color: var(--muted); font-size: 15px; margin-top: 8px; text-align: center; }
 .levelbar { height: 12px; background: var(--line); border-radius: 6px; overflow: hidden; margin-top: 8px; }
 .levelbar > div { height: 100%; width: 0; background: var(--good); transition: width 0.05s; }
-.miclog { margin-top: 14px; font-size: 12px; color: var(--muted); }
-.miclog pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; font-size: 12px; }
+
+/* ---------- v0.2 ---------- */
+.brand { display: flex; align-items: baseline; gap: 8px; }
+.brand .ver { color: var(--muted); font-size: 13px; }
+.tabs { display: flex; gap: 6px; margin: 10px 0 6px; }
+.tab { flex: 1; min-height: 46px; padding: 0 4px; white-space: nowrap; border-radius: 12px; border: 1px solid var(--line); background: var(--card); font-weight: 600; font-size: 14px; }
+.tab.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+p.sub { color: var(--muted); margin: 8px 0 12px; }
+.warn .btn { margin-top: 8px; }
+.btn-small { min-height: 44px; padding: 0 14px; }
+.btn-primary { background: var(--brand); color: #fff; border-color: var(--brand); width: 100%; margin-top: 10px; }
+.btn.danger { color: var(--bad); margin-top: 10px; }
+.hint.left { text-align: left; padding: 6px 0; }
+
+.card.char { display: flex; align-items: center; gap: 12px; padding: 16px 14px; }
+.card.char .flag { font-size: 36px; line-height: 1; }
+.badge.cont { background: var(--brand-2); position: static; transform: none; margin-left: auto; }
+
+.set { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin: 12px 0; }
+.set h2 { font-size: 17px; margin: 0 0 8px; }
+.set input:not([type=range]) { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 16px; }
+.set input[type=range] { width: 75%; vertical-align: middle; }
+.set > .btn { width: 100%; }
+.keyrow { display: flex; gap: 8px; }
+.keyrow input { flex: 1; }
+.how { margin-top: 10px; color: var(--muted); font-size: 15px; }
+.how summary { cursor: pointer; color: var(--brand); font-weight: 600; padding: 6px 0; }
+.how ol { padding-left: 20px; margin: 6px 0; }
+.how a { color: var(--brand); font-weight: 600; }
+pre.log { white-space: pre-wrap; font-size: 12px; }
+
+/* Chat */
+#app.chat-mode { padding-bottom: 0; }
+.chatbar { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 6px 0; gap: 8px; }
+.chatbar .who { font-weight: 700; font-size: 18px; flex: 1; }
+.chatbar .usage { color: var(--muted); font-size: 13px; }
+.btn-icon { background: var(--card); border: 1px solid var(--line); border-radius: 10px; min-width: 44px; min-height: 44px; font-size: 20px; }
+.msgs { display: flex; flex-direction: column; gap: 10px; padding: 8px 0 16px; min-height: 30vh; }
+.bubble { max-width: 88%; padding: 12px 14px; border-radius: 18px; font-size: 18px; }
+.bubble.ai { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 6px; }
+.bubble.me { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 6px; }
+.bubble.typing { color: var(--muted); font-style: italic; font-size: 15px; }
+.bubble .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.chip { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 6px 12px; font-size: 14px; min-height: 36px; }
+.bubble .vi { color: var(--muted); font-size: 15px; margin-top: 8px; }
+.hidden { display: none; }
+
+.dock { position: sticky; bottom: 0; background: var(--bg); padding: 8px 0 12px; border-top: 1px solid var(--line); }
+.dock .btn-mic { min-height: 84px; margin: 8px 0; }
+.dock .btn-mic .mic-icon { font-size: 30px; }
+.btn-tool { font-size: 15px; }
+.btn-tool.listening { background: var(--bad); color: #fff; }
+.typerow { display: flex; gap: 8px; }
+.typerow input { flex: 1; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 16px; }
+.panel { position: relative; display: none; max-height: 48vh; overflow-y: auto; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
+.panel.open { display: block; }
+.panel-close { position: absolute; right: 6px; top: 6px; border: none; background: none; font-size: 18px; min-width: 40px; min-height: 40px; color: var(--muted); }
+.panel-title { font-weight: 700; margin: 0 36px 8px 0; }
+.sugg-item { border: 1px solid var(--line); border-radius: 12px; margin: 8px 0; }
+.sugg-head { display: block; width: 100%; text-align: left; background: none; border: none; padding: 10px 12px; }
+.sugg-head .en { display: block; font-weight: 600; }
+.sugg-head .vi { display: block; color: var(--muted); font-size: 14px; }
+.lvl { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: #fff; }
+.lvl.l0 { background: var(--good); } .lvl.l1 { background: var(--ok); } .lvl.l2 { background: var(--bad); }
+.sugg-item .pw { padding: 0 12px 12px; }
+.help-label { font-size: 13px; font-weight: 700; color: var(--brand); text-transform: uppercase; margin: 12px 0 4px; }
+.note { background: var(--bg); border-radius: 10px; padding: 10px; margin-top: 10px; font-size: 15px; }
+
+/* Khối luyện câu */
+.pw-en { font-size: 19px; font-weight: 700; margin: 4px 0 8px; }
+.pw-vi { color: var(--muted); font-size: 15px; margin-bottom: 8px; }
+.btn-mic.small { min-height: 64px; margin: 10px 0 4px; font-size: 16px; flex-direction: row; gap: 10px; }
+.btn-mic.small .mic-icon { font-size: 24px; }
+.pw .score { font-size: 32px; margin-top: 4px; }
+.btn-send { width: 100%; margin-top: 8px; background: color-mix(in srgb, var(--brand) 15%, var(--card)); }
