@@ -45,6 +45,8 @@
 - Dữ liệu lưu trên máy (localStorage).
 - **KHÔNG BAO GIỜ ghi API key vào code hay commit** — key chỉ lưu trên điện thoại (localStorage).
 - Repo công khai `english-buddy`, host bằng **GitHub Pages** (nhánh `main`, thư mục gốc).
+- Người dùng có cả Brave trên điện thoại: Brave KHÔNG hỗ trợ nhận giọng nói (Web Speech) → luôn dùng Chrome. App tự cảnh báo khi phát hiện Brave.
+- Khi sửa JS/CSS, tăng `?v=` trong index.html để điện thoại không dùng bản cũ trong bộ nhớ đệm.
 - Nhận giọng nói: Web Speech API (`webkitSpeechRecognition`), đọc mẫu: `speechSynthesis`. Cần HTTPS (GitHub Pages ok) hoặc localhost.
 
 ## Lưu ý máy Windows của người dùng
