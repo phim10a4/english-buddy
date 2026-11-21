@@ -1,0 +1,61 @@
+{
+  "stage": 1,
+  "title": "Chặng 1 — Nói về mình",
+  "topics": [
+    {
+      "id": "intro",
+      "name": "Giới thiệu bản thân",
+      "icon": "👋",
+      "phrases": [
+        { "en": "Hi, my name is {name}. Nice to meet you.", "vi": "Chào bạn, tôi tên là {name}. Rất vui được gặp bạn." },
+        { "en": "I'm from Vietnam. I live in Nha Trang.", "vi": "Tôi đến từ Việt Nam. Tôi sống ở Nha Trang." },
+        { "en": "Nha Trang is a beach city on the central coast of Vietnam.", "vi": "Nha Trang là một thành phố biển ở miền Trung Việt Nam." },
+        { "en": "In my free time, I like going to the gym and trying new food.", "vi": "Lúc rảnh, tôi thích đi tập gym và thử món ăn mới." }
+      ]
+    },
+    {
+      "id": "work",
+      "name": "Công việc kế toán",
+      "icon": "💼",
+      "phrases": [
+        { "en": "I work as an accountant.", "vi": "Tôi làm kế toán." },
+        { "en": "My company supplies food to restaurants and hotels.", "vi": "Công ty tôi cung cấp thực phẩm cho nhà hàng và khách sạn." },
+        { "en": "I check invoices and keep track of payments.", "vi": "Tôi kiểm tra hoá đơn và theo dõi các khoản thanh toán." },
+        { "en": "The end of the month is always very busy for me.", "vi": "Cuối tháng lúc nào tôi cũng rất bận." }
+      ]
+    },
+    {
+      "id": "gym",
+      "name": "Gym",
+      "icon": "🏋️",
+      "phrases": [
+        { "en": "I go to the gym three times a week.", "vi": "Tôi đi tập gym ba lần một tuần." },
+        { "en": "I usually work out after work, in the evening.", "vi": "Tôi thường tập sau giờ làm, vào buổi tối." },
+        { "en": "Today is leg day, so I'm going to do squats.", "vi": "Hôm nay là ngày tập chân nên tôi sẽ tập squat." },
+        { "en": "I'm trying to build muscle and eat more protein.", "vi": "Tôi đang cố tăng cơ và ăn nhiều đạm hơn." }
+      ]
+    },
+    {
+      "id": "food",
+      "name": "Đồ ăn Việt",
+      "icon": "🍜",
+      "phrases": [
+        { "en": "Have you ever tried pho? It's a Vietnamese noodle soup.", "vi": "Bạn đã ăn phở bao giờ chưa? Đó là món phở nước của Việt Nam." },
+        { "en": "For breakfast, I usually have banh mi and iced coffee.", "vi": "Bữa sáng tôi thường ăn bánh mì và uống cà phê đá." },
+        { "en": "Vietnamese food is fresh and not too oily.", "vi": "Đồ ăn Việt tươi và không quá nhiều dầu mỡ." },
+        { "en": "You should try fish noodle soup when you visit Nha Trang.", "vi": "Bạn nên thử bún cá khi đến Nha Trang." }
+      ]
+    },
+    {
+      "id": "nhatrang",
+      "name": "Nha Trang",
+      "icon": "🏖️",
+      "phrases": [
+        { "en": "The weather here is sunny and warm most of the year.", "vi": "Thời tiết ở đây nắng ấm gần như quanh năm." },
+        { "en": "Many tourists come here for the beaches and seafood.", "vi": "Nhiều khách du lịch đến đây vì biển và hải sản." },
+        { "en": "If you like islands, you can take a boat trip.", "vi": "Nếu bạn thích đảo, bạn có thể đi tour thuyền." },
+        { "en": "I can recommend a good local restaurant near the beach.", "vi": "Tôi có thể giới thiệu một quán ăn địa phương ngon gần biển." }
+      ]
+    }
+  ]
+}
