@@ -57,4 +57,6 @@
 - Xem mục "Nhật ký" bên dưới, cập nhật mỗi buổi.
 
 ## Nhật ký
-- 2026-11-21: tạo CLAUDE.md, repo, làm v0.1.
+- Repo: https://github.com/phim10a4/english-buddy — App: https://phim10a4.github.io/english-buddy/
+- Git trong repo dùng email noreply của GitHub (không dùng email cá nhân).
+- 2026-11-21: tạo CLAUDE.md, repo, làm v0.1, bật GitHub Pages. Đang chờ người dùng xác nhận mic trên Android → rồi làm v0.2.
