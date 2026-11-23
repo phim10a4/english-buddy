@@ -54,7 +54,8 @@
 ## Cấu trúc code
 - `index.html` → nạp `js/config.js` (CONFIG), `js/speech.js` (đọc/nghe/chấm điểm), `js/ai.js` (nhà cung cấp AI + lời nhắc nhân vật + đếm lượt), `js/app.js` (giao diện).
 - `data/phrases.json` (câu mẫu), `data/characters.json` (nhân vật: persona, giọng, câu mở đầu + gợi ý).
-- Gemini: key trong localStorage `englishBuddy.apiKey.gemini`; app tự chọn model Flash-Lite qua ListModels nếu model trong CONFIG không có. Trả JSON theo responseSchema; mỗi lượt chat trả luôn 3 gợi ý (nút Gợi ý không tốn lượt).
+- Gemini: key trong localStorage `englishBuddy.apiKey.gemini`. Model mặc định gemini-3.5-flash-lite (2.5 đã ngừng cho người dùng mới, 11/2026). Gặp lỗi 404 model → app ghi model vào danh sách chặn và tự chọn Flash-Lite khác qua ListModels.
+- Giọng Anh đọc từ Việt (Nha Trang, pho...) bằng bảng `CONFIG.speech.pronounce` (chỉ đổi tiếng đọc). Trả JSON theo responseSchema; mỗi lượt chat trả luôn 3 gợi ý (nút Gợi ý không tốn lượt).
 - Mở đầu cuộc trò chuyện lấy từ JSON (không tốn lượt API).
 
 ## Lưu ý máy Windows của người dùng

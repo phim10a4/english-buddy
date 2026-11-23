@@ -107,13 +107,24 @@ const Speech = (() => {
   }
   if (hasTTS) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => {}; }
 
+  // Thay từ tiếng Việt (không dấu hoặc có dấu) bằng cách đọc giọng Anh hiểu được
+  const strip = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D");
+  const PRON = Object.entries(CONFIG.speech.pronounce || {}).sort((a, b) => b[0].length - a[0].length);
+  function forSpeech(text) {
+    let out = strip(text);
+    PRON.forEach(([w, say]) => {
+      out = out.replace(new RegExp("\\b" + w.replace(/ /g, "\\s+") + "\\b", "gi"), say);
+    });
+    return out;
+  }
+
   function speak(text, { lang = CONFIG.speech.voiceLang, rate = 1 } = {}) {
     return new Promise((resolve) => {
       if (!hasTTS) return resolve();
       stop();
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
       const v = pickVoice(lang);
+      const u = new SpeechSynthesisUtterance(lang.startsWith("en") ? forSpeech(text) : text);
       u.lang = v ? v.lang : lang;
       if (v) u.voice = v;
       u.rate = rate;

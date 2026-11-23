@@ -58,18 +58,27 @@ const AI = (() => {
     },
 
     // Chọn model Flash-Lite phù hợp từ danh sách model của key
+    // Model bị Google ngừng cho tài khoản này → ghi nhớ để bỏ qua
+    blockedKey: CONFIG.storageKey + ".geminiBlocked",
+    blocked() { try { return JSON.parse(safeGet(this.blockedKey) || "[]"); } catch { return []; } },
+    block(m) { const b = this.blocked(); if (!b.includes(m)) b.push(m); safeSet(this.blockedKey, JSON.stringify(b)); },
+
     async pickModel(key) {
       const pref = CONFIG.ai.gemini.model;
+      const blocked = this.blocked();
       if (!CONFIG.ai.gemini.autoPickModel) return pref;
       const data = await this.request("/models?pageSize=200", key);
       const names = (data.models || [])
         .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
         .map((m) => m.name.replace(/^models\//, ""))
-        .filter((n) => /flash-lite/.test(n) && !/tts|image|audio|live|embed/.test(n));
+        .filter((n) => /flash-lite/.test(n) && !/tts|image|audio|live|embed/.test(n) && !blocked.includes(n));
       if (names.includes(pref)) return pref;
       const ver = (n) => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
+      // Ưu tiên bản ổn định, mới nhất
       names.sort((a, b) => (/preview|exp/.test(a) - /preview|exp/.test(b)) || ver(b) - ver(a) || a.length - b.length);
-      return names[0] || pref;
+      if (names[0]) return names[0];
+      if (!blocked.includes(pref)) return pref;
+      throw new AIError("Không tìm được model Gemini Flash-Lite nào dùng được với key này.", "model");
     },
 
     async check(key) {
@@ -115,11 +124,13 @@ const AI = (() => {
         return this.request("/models/" + encodeURIComponent(this.model()) + ":generateContent", key, body);
       };
       let data;
-      try { data = await call(); }
-      catch (e) {
-        if (e.code !== "model") throw e;
-        await this.check(key);            // model cũ bị gỡ → chọn lại rồi thử lần nữa
-        data = await call();
+      for (let tries = 0; ; tries++) {
+        try { data = await call(); break; }
+        catch (e) {
+          if (e.code !== "model" || tries >= 3) throw e;
+          this.block(this.model());       // model bị ngừng → bỏ qua, chọn model khác rồi thử lại
+          await this.check(key);
+        }
       }
       const cand = data.candidates && data.candidates[0];
       const text = cand && cand.content && (cand.content.parts || []).map((p) => p.text || "").join("");
@@ -161,6 +172,7 @@ const AI = (() => {
       "- If the user asks \"How do you say ...?\", or mixes in Vietnamese words, help naturally: give the natural English phrase in your reply and encourage them to try saying it.",
       "- Do not correct mistakes directly. If the user makes a mistake, naturally repeat the correct form in your reply.",
       "- If the user's message is unclear (speech recognition errors), guess kindly or ask them to say it again simply.",
+      `- The user's real name is ${userName}. Speech recognition often mishears Vietnamese names (for example as "Juan" or "mine"), so always call them ${userName}.`,
       "- Stay in character. Plain text only, no emojis, no markdown.",
       "Output JSON:",
       "- reply: what you say (English).",

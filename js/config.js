@@ -11,7 +11,7 @@ const CONFIG = {
     temperature: 0.8,
     historyTurns: 16,            // số lượt gần nhất gửi kèm để AI nhớ ngữ cảnh
     gemini: {
-      model: "gemini-2.5-flash-lite",   // model ưu tiên; nếu không có, app tự chọn bản Flash-Lite mới nhất
+      model: "gemini-3.5-flash-lite",   // model ưu tiên; nếu không dùng được, app tự chọn bản Flash-Lite mới nhất
       autoPickModel: true,
       endpoint: "https://generativelanguage.googleapis.com/v1beta",
       keyUrl: "https://aistudio.google.com/apikey"
@@ -30,7 +30,20 @@ const CONFIG = {
     rateNormal: 0.9,             // tốc độ đọc câu mẫu
     rateSlow: 0.65,              // tốc độ đọc chậm
     rateChat: 0.85,              // tốc độ nhân vật nói (chỉnh trong Cài đặt)
-    maxAlternatives: 5
+    maxAlternatives: 5,
+    // Cách đọc từ tiếng Việt cho giọng tiếng Anh (chỉ ảnh hưởng tiếng đọc, không đổi chữ hiển thị)
+    pronounce: {
+      "Nha Trang": "Nyah Trahng",
+      "Vietnam": "Viet Nahm",
+      "Vietnamese": "Viet nah meez",
+      "banh mi": "bahn mee",
+      "pho": "fuh",
+      "bun cha": "boon chah",
+      "Hanoi": "Ha noy",
+      "Ho Chi Minh": "Ho Chee Min",
+      "Da Lat": "Dah Laht",
+      "ao dai": "ow zai"
+    }
   },
 
   scoring: {
