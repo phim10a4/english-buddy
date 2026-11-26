@@ -158,3 +158,11 @@ pre.log { white-space: pre-wrap; font-size: 12px; }
 .btn-mic.small .mic-icon { font-size: 24px; }
 .pw .score { font-size: 32px; margin-top: 4px; }
 .btn-send { width: 100%; margin-top: 8px; background: color-mix(in srgb, var(--brand) 15%, var(--card)); }
+.opt { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 8px 0; cursor: pointer; }
+.opt.on { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, var(--card)); }
+.opt input { margin-top: 4px; width: 20px; height: 20px; accent-color: var(--brand); }
+.opt-title { font-weight: 700; }
+.opt-desc { color: var(--muted); font-size: 14px; }
+.panel .btn-small { margin-top: 8px; }
+.btn-mic.listening .label { font-size: 15px; }
+.set .opt input { width: 20px; height: 20px; flex: none; padding: 0; }

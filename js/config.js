@@ -31,6 +31,8 @@ const CONFIG = {
     rateSlow: 0.65,              // tốc độ đọc chậm
     rateChat: 0.85,              // tốc độ nhân vật nói (chỉnh trong Cài đặt)
     maxAlternatives: 5,
+    maxListenSec: 90,            // nghe/ghi âm tối đa mỗi lượt
+    hearModeDefault: "device",   // "device" = điện thoại nhận giọng (miễn phí) · "ai" = gửi giọng cho Gemini nghe
     // Cách đọc từ tiếng Việt cho giọng tiếng Anh (chỉ ảnh hưởng tiếng đọc, không đổi chữ hiển thị)
     pronounce: {
       "Nha Trang": "Nyah Trahng",

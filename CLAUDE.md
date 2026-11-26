@@ -57,6 +57,8 @@
 - Gemini: key trong localStorage `englishBuddy.apiKey.gemini`. Model mặc định gemini-3.5-flash-lite (2.5 đã ngừng cho người dùng mới, 11/2026). Gặp lỗi 404 model → app ghi model vào danh sách chặn và tự chọn Flash-Lite khác qua ListModels.
 - Giọng Anh đọc từ Việt (Nha Trang, pho...) bằng bảng `CONFIG.speech.pronounce` (chỉ đổi tiếng đọc). Trả JSON theo responseSchema; mỗi lượt chat trả luôn 3 gợi ý (nút Gợi ý không tốn lượt).
 - Mở đầu cuộc trò chuyện lấy từ JSON (không tốn lượt API).
+- Nghe khi trò chuyện: không tự ngắt khi người dùng dừng suy nghĩ (Speech.listen long:true tự khởi động lại, ghép các đoạn; bấm lại nút = Xong).
+- Cài đặt "Ai nghe giọng bạn": `device` (Web Speech, miễn phí) hoặc `ai` (ghi WAV 16kHz gửi kèm lượt chat cho Gemini, trả trường `heard`; không tốn thêm lượt). Người dùng phàn nàn điện thoại nghe sai tên/địa danh → chế độ `ai` để khắc phục.
 
 ## Lưu ý máy Windows của người dùng
 - Trong `C:\Users\Admin\OneDrive` có HAI thư mục tên "Tài liệu" (khác kiểu mã hoá dấu Unicode). Repo thật nằm trong thư mục
@@ -73,3 +75,4 @@
 - 2026-11-21: tạo CLAUDE.md, repo, làm v0.1, bật GitHub Pages. Mic xác nhận chạy trên Android.
 - 2026-11-21: làm v0.2 (tab Trò chuyện/Câu mẫu/Cài đặt; Mike/Yuki/Tom; Gợi ý; Nói tiếng Việt; đếm lượt AI; dán key).
   Đã thử với Gemini giả lập; CHƯA thử với key thật → buổi sau hỏi người dùng kết quả. Tiếp theo: v0.3.
+- 2026-11-26: sửa model Gemini bị ngừng (tự chọn model khác), cách đọc từ Việt, nghe không tự ngắt, thêm chế độ Gemini nghe. Chờ người dùng thử chế độ Gemini nghe với key thật.

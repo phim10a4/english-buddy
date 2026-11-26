@@ -149,62 +149,185 @@ const Speech = (() => {
   };
 
   // Trả về Promise: { alts: [...] } | { error } | { cancelled: true }
-  function listen({ lang = CONFIG.speech.listenLang, onInterim } = {}) {
+  // long = true: không tự dừng khi bạn ngừng nói; nghe tiếp cho tới khi gọi finish() (bấm Xong).
+  let session = null;   // { done, cancel, recorder... } của lần nghe hiện tại
+
+  function listen({ lang = CONFIG.speech.listenLang, onInterim, long = false } = {}) {
     return new Promise((resolve) => {
       const SR = getSR();
       if (!SR) return resolve({ error: "Trình duyệt này không hỗ trợ nhận giọng nói. Hãy dùng Chrome trên Android." });
       if (hasTTS) speechSynthesis.cancel();
-      if (rec) { try { rec.abort(); } catch {} }
+      stop();
 
       const t0 = performance.now();
       lastLog.length = 0;
       const log = (m) => lastLog.push(((performance.now() - t0) / 1000).toFixed(1) + "s " + m);
+      const maxMs = (CONFIG.speech.maxListenSec || 90) * 1000;
 
-      const r = new SR();
-      rec = r;
-      r.lang = lang;
-      r.interimResults = true;
-      r.continuous = false;
-      r.maxAlternatives = CONFIG.speech.maxAlternatives;
-      let finalAlts = null, interim = "", err = null, cancelled = false;
+      const s = { userDone: false, cancelled: false, finished: false };
+      session = s;
+      const parts = [];          // các đoạn đã chốt (chế độ long)
+      let lastAlts = null;       // các phương án của đoạn cuối
+      let err = null;
 
-      r.onstart = () => { log("start " + lang); stateCb && stateCb(true); };
-      r.onaudiostart = () => log("audiostart");
-      r.onspeechstart = () => log("speechstart");
-      r.onresult = (e) => {
-        let tmp = "";
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const x = e.results[i];
-          if (x.isFinal) finalAlts = Array.from(x).map((a) => a.transcript.trim()).filter(Boolean);
-          else tmp += x[0].transcript;
-        }
-        if (tmp) { interim = tmp.trim(); onInterim && onInterim(interim); }
-        log("result " + (finalAlts ? "final" : "tạm"));
-      };
-      r.onerror = (e) => {
-        log("error " + e.error);
-        if (e.error === "aborted") cancelled = true;
-        else err = ERR[e.error] || "Lỗi nhận giọng nói: " + e.error;
-      };
-      r.onend = () => {
-        log("end");
-        if (rec === r) rec = null;
+      const finishAll = () => {
+        if (s.finished) return;
+        s.finished = true;
+        if (session === s) session = null;
+        rec = null;
         stateCb && stateCb(false);
-        const alts = finalAlts && finalAlts.length ? finalAlts : interim ? [interim] : null;
-        if (alts) resolve({ alts });
-        else if (err) resolve({ error: err });
-        else if (cancelled) resolve({ cancelled: true });
-        else resolve({ error: "Không nhận được giọng nói. Bấm lại rồi nói ngay khi nút chuyển đỏ." });
+        if (s.cancelled) return resolve({ cancelled: true });
+        const before = parts.join(" ").trim();
+        if (lastAlts && lastAlts.length) {
+          return resolve({ alts: lastAlts.map((a) => (before ? before + " " + a : a).trim()) });
+        }
+        if (before) return resolve({ alts: [before] });
+        resolve({ error: err || "Không nhận được giọng nói. Bấm lại rồi nói ngay khi nút chuyển đỏ." });
       };
-      try { r.start(); }
-      catch (e) { rec = null; resolve({ error: "Không bật được mic: " + e.message }); }
+
+      const startOne = () => {
+        const r = new SR();
+        rec = r;
+        r.lang = lang;
+        r.interimResults = true;
+        r.continuous = false;
+        r.maxAlternatives = CONFIG.speech.maxAlternatives;
+        let finalAlts = null, interim = "";
+
+        r.onstart = () => { log("start " + lang); stateCb && stateCb(true); };
+        r.onaudiostart = () => log("audiostart");
+        r.onspeechstart = () => log("speechstart");
+        r.onresult = (e) => {
+          let tmp = "";
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const x = e.results[i];
+            if (x.isFinal) finalAlts = Array.from(x).map((a) => a.transcript.trim()).filter(Boolean);
+            else tmp += x[0].transcript;
+          }
+          if (tmp) interim = tmp.trim();
+          const now = finalAlts ? finalAlts[0] : interim;
+          onInterim && onInterim([...parts, now].join(" ").trim());
+          log("result " + (finalAlts ? "final" : "tạm"));
+        };
+        r.onerror = (e) => {
+          log("error " + e.error);
+          if (e.error === "aborted" || e.error === "no-speech") return;   // im lặng: bỏ qua
+          err = ERR[e.error] || "Lỗi nhận giọng nói: " + e.error;
+        };
+        r.onend = () => {
+          log("end");
+          const got = finalAlts && finalAlts.length ? finalAlts : interim ? [interim] : null;
+          const fatal = err && !/no-speech/.test(err);
+          const timeUp = performance.now() - t0 > maxMs;
+          if (long && !s.userDone && !s.cancelled && !fatal && !timeUp) {
+            if (got) parts.push(got[0]);
+            lastAlts = null;
+            setTimeout(() => { if (!s.userDone && !s.cancelled) startOne(); else finishAll(); }, 150);
+            return;
+          }
+          if (got) lastAlts = got;
+          if (!long && !got && !err && !s.userDone) err = ERR["no-speech"];
+          finishAll();
+        };
+        try { r.start(); }
+        catch (e) { err = "Không bật được mic: " + e.message; finishAll(); }
+      };
+      s.finishNow = finishAll;
+      startOne();
     });
   }
-  // Dừng nghe và lấy kết quả đã có
-  function finish() { if (rec) try { rec.stop(); } catch {} }
+  // Dừng nghe và lấy kết quả đã có (bấm Xong)
+  function finish() {
+    const s = session;
+    if (!s) return;
+    s.userDone = true;
+    if (rec) { try { rec.stop(); } catch { s.finishNow(); } }
+    else s.finishNow();
+  }
   // Huỷ hẳn
-  function stop() { if (rec) { const r = rec; rec = null; try { r.abort(); } catch {} stateCb && stateCb(false); } }
-  const isListening = () => !!rec;
+  function stop() {
+    const s = session;
+    if (s) { s.cancelled = true; }
+    if (rec) { const r = rec; rec = null; try { r.abort(); } catch {} }
+    if (s) s.finishNow();
+    if (recorder) recorder.cancel();
+    stateCb && stateCb(false);
+  }
+  const isListening = () => !!session || !!recorder;
+
+  // ---------- Ghi âm để gửi AI nghe (WAV 16kHz mono) ----------
+  let recorder = null;
+  async function record({ onLevel } = {}) {
+    stop();
+    if (hasTTS) speechSynthesis.cancel();
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+    catch (e) { throw new Error("Không mở được mic: " + e.name + ". Hãy cho phép Micrô cho trang này."); }
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const chunks = [];
+    const t0 = performance.now();
+    const maxMs = (CONFIG.speech.maxListenSec || 90) * 1000;
+    let resolveDone;
+    const done = new Promise((r) => { resolveDone = r; });
+    proc.onaudioprocess = (e) => {
+      const d = e.inputBuffer.getChannelData(0);
+      chunks.push(new Float32Array(d));
+      if (onLevel) { let p = 0; for (let i = 0; i < d.length; i += 64) p = Math.max(p, Math.abs(d[i])); onLevel(p, (performance.now() - t0) / 1000); }
+      if (performance.now() - t0 > maxMs) ctrl.stop();
+    };
+    src.connect(proc);
+    proc.connect(ctx.destination);
+    const cleanup = () => {
+      try { proc.disconnect(); src.disconnect(); } catch {}
+      stream.getTracks().forEach((t) => t.stop());
+      ctx.close();
+      recorder = null;
+      stateCb && stateCb(false);
+    };
+    const ctrl = {
+      stop() {
+        if (recorder !== ctrl) return done;
+        cleanup();
+        resolveDone({ wav: encodeWav(chunks, ctx.sampleRate, 16000), seconds: (performance.now() - t0) / 1000 });
+        return done;
+      },
+      cancel() { if (recorder !== ctrl) return; cleanup(); resolveDone(null); },
+      done
+    };
+    recorder = ctrl;
+    stateCb && stateCb(true);
+    return ctrl;
+  }
+  const isRecording = () => !!recorder;
+  const stopRecording = () => recorder && recorder.stop();
+
+  function encodeWav(chunks, inRate, outRate) {
+    let len = 0; chunks.forEach((c) => { len += c.length; });
+    const all = new Float32Array(len);
+    let o = 0; chunks.forEach((c) => { all.set(c, o); o += c.length; });
+    const ratio = inRate / outRate;
+    const n = Math.floor(all.length / ratio);
+    const buf = new ArrayBuffer(44 + n * 2);
+    const v = new DataView(buf);
+    const str = (p, s) => { for (let i = 0; i < s.length; i++) v.setUint8(p + i, s.charCodeAt(i)); };
+    str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVE"); str(12, "fmt ");
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, outRate, true); v.setUint32(28, outRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, "data"); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) {
+      // lấy trung bình để giảm mẫu
+      const a = Math.floor(i * ratio), b = Math.min(all.length, Math.floor((i + 1) * ratio));
+      let sum = 0; for (let k = a; k < b; k++) sum += all[k];
+      const x = Math.max(-1, Math.min(1, sum / Math.max(1, b - a)));
+      v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+    }
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
   const onState = (cb) => { stateCb = cb; };
 
   // ---------- Kiểm tra mic ----------
@@ -239,5 +362,5 @@ const Speech = (() => {
       : "⚠️ Mic mở được nhưng gần như không có tiếng (mức " + max + ").";
   }
 
-  return { speak, listen, finish, stop, isListening, onState, score, bestScore, tokenize, micTest, lastLog, hasSR: () => !!getSR() };
+  return { speak, listen, finish, stop, isListening, record, isRecording, stopRecording, onState, score, bestScore, tokenize, micTest, lastLog, hasSR: () => !!getSR() };
 })();

@@ -104,9 +104,12 @@ const AI = (() => {
       const contents = [];
       history.forEach((m) => {
         const role = m.role === "ai" ? "model" : "user";
+        const parts = [];
+        if (m.audio) parts.push({ inlineData: { mimeType: "audio/wav", data: m.audio } });
+        parts.push({ text: m.text });
         const last = contents[contents.length - 1];
-        if (last && last.role === role) last.parts[0].text += "\n" + m.text;
-        else contents.push({ role, parts: [{ text: m.text }] });
+        if (last && last.role === role) last.parts.push(...parts);
+        else contents.push({ role, parts });
       });
       if (!contents.length || contents[0].role !== "user") contents.unshift({ role: "user", parts: [{ text: "(start)" }] });
 
@@ -181,35 +184,58 @@ const AI = (() => {
     ].join("\n");
   }
 
-  async function chatTurn(ch, messages, userName) {
+  const HEAR_RULE = (userName) =>
+    `- heard: the user's last message is a voice recording. Write EXACTLY what they said in English (verbatim, keep their grammar mistakes, do not improve it). ` +
+    `Spell names and Vietnamese places correctly (their name is ${userName}; e.g. Nha Trang, Da Lat, pho, banh mi). If they mixed in Vietnamese words, write those words in Vietnamese with accents. ` +
+    `Then reply to what they said.`;
+
+  // audio: chuỗi base64 WAV của lượt nói cuối (nếu dùng chế độ để AI nghe)
+  async function chatTurn(ch, messages, userName, audio) {
     const key = need();
     const history = messages.slice(-CONFIG.ai.historyTurns).map((m) => ({ role: m.role, text: m.en }));
+    const props = { reply: { type: "string" }, reply_vi: { type: "string" }, suggestions: SUGG };
+    let system = systemFor(ch, userName);
+    if (audio) {
+      history.push({ role: "me", text: "(voice message)", audio });
+      system += "\n" + HEAR_RULE(userName);
+    }
     const out = await provider().generateJSON(key, {
-      system: systemFor(ch, userName),
+      system,
       history,
-      schema: { type: "object", properties: { reply: { type: "string" }, reply_vi: { type: "string" }, suggestions: SUGG } }
+      schema: { type: "object", properties: audio ? { heard: { type: "string" }, ...props } : props }
     });
-    return { en: String(out.reply || "").trim(), vi: String(out.reply_vi || "").trim(), suggestions: (out.suggestions || []).slice(0, 3) };
+    return {
+      heard: audio ? String(out.heard || "").trim() : null,
+      en: String(out.reply || "").trim(),
+      vi: String(out.reply_vi || "").trim(),
+      suggestions: (out.suggestions || []).slice(0, 3)
+    };
   }
 
-  async function vietHelp(ch, messages, viText, userName) {
+  // viText: câu tiếng Việt (điện thoại nhận) — hoặc audio: bản ghi giọng tiếng Việt cho AI tự nghe
+  async function vietHelp(ch, messages, viText, userName, audio) {
     const key = need();
     const lastAi = [...messages].reverse().find((m) => m.role === "ai");
     const system = [
       `You help ${userName}, a Vietnamese learner of English (level ${CONFIG.learner.level}), say something in English during a chat with ${ch.name} from ${ch.country}.`,
-      "The learner said it in Vietnamese (from speech recognition, may have small errors).",
+      audio ? "The learner recorded what they want to say, in Vietnamese." : "The learner said it in Vietnamese (from speech recognition, may have small errors).",
       "Return JSON:",
+      "- heard: the Vietnamese sentence the learner said, with correct Vietnamese accents.",
       "- standard: a natural English sentence a native speaker would say in this situation.",
       "- simple: an easier, shorter English version a beginner can say confidently.",
       "- note_vi: one short tip in Vietnamese (max 25 words) about a key word or pattern."
     ].join("\n");
-    const prompt = (lastAi ? `${ch.name} just said: "${lastAi.en}"\n` : "") + `The learner wants to say (Vietnamese): "${viText}"`;
+    const prompt = (lastAi ? `${ch.name} just said: "${lastAi.en}"\n` : "") +
+      (audio ? "The learner's Vietnamese is in the recording." : `The learner wants to say (Vietnamese): "${viText}"`);
     const out = await provider().generateJSON(key, {
       system,
-      history: [{ role: "user", text: prompt }],
-      schema: { type: "object", properties: { standard: { type: "string" }, simple: { type: "string" }, note_vi: { type: "string" } } }
+      history: [{ role: "user", text: prompt, audio }],
+      schema: { type: "object", properties: { heard: { type: "string" }, standard: { type: "string" }, simple: { type: "string" }, note_vi: { type: "string" } } }
     });
-    return { standard: String(out.standard || "").trim(), simple: String(out.simple || "").trim(), note: String(out.note_vi || "").trim() };
+    return {
+      heard: String(out.heard || viText || "").trim(),
+      standard: String(out.standard || "").trim(), simple: String(out.simple || "").trim(), note: String(out.note_vi || "").trim()
+    };
   }
 
   return {

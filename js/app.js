@@ -5,13 +5,13 @@
   // ---------- Lưu trữ trên máy ----------
   const load = () => { try { return JSON.parse(localStorage.getItem(CONFIG.storageKey)) || {}; } catch { return {}; } };
   const state = Object.assign(
-    { name: CONFIG.defaultName, best: {}, attempts: 0, rateChat: CONFIG.speech.rateChat, chats: {}, tab: "chat" },
+    { name: CONFIG.defaultName, best: {}, attempts: 0, rateChat: CONFIG.speech.rateChat, chats: {}, tab: "chat", hearMode: CONFIG.speech.hearModeDefault },
     load()
   );
   const persist = () => {
     try {
-      const { name, best, attempts, rateChat, chats, tab } = state;
-      localStorage.setItem(CONFIG.storageKey, JSON.stringify({ name, best, attempts, rateChat, chats, tab }));
+      const { name, best, attempts, rateChat, chats, tab, hearMode } = state;
+      localStorage.setItem(CONFIG.storageKey, JSON.stringify({ name, best, attempts, rateChat, chats, tab, hearMode }));
     } catch {}
   };
 
@@ -46,14 +46,14 @@
     b.dataset.label = label;
     return b;
   }
-  function setMic(b, on) {
+  function setMic(b, on, label) {
     b.classList.toggle("listening", on);
-    $(".label", b).textContent = on ? "Đang nghe… bấm để dừng" : b.dataset.label;
+    $(".label", b).textContent = on ? (label || "Đang nghe… bấm để dừng") : b.dataset.label;
   }
   // Bấm lần 1: nghe. Bấm khi đang nghe: dừng và lấy kết quả.
   async function listenWith(b, opts) {
     if (Speech.isListening()) { Speech.finish(); return null; }
-    setMic(b, true);
+    setMic(b, true, opts.long ? "Đang nghe… nói xong thì bấm vào đây ✓" : null);
     const r = await Speech.listen(opts);
     setMic(b, false);
     return r;
@@ -162,7 +162,7 @@
 
   function openChat(ch) {
     Speech.stop();
-    const msgs = state.chats[ch.id] || [];
+    const msgs = (state.chats[ch.id] || []).filter((m) => m.en !== "🎤 …");
     if (!msgs.length) {
       msgs.push({ role: "ai", en: ch.opening.en, vi: ch.opening.vi, suggestions: ch.opening.suggestions });
       state.chats[ch.id] = msgs;
@@ -268,12 +268,45 @@
     return p;
   }
 
+  const cancelBtn = () => btn("btn btn-small", "✕ Huỷ, nói lại", () => { Speech.stop(); panelSet(); });
+  const fmtSec = (s) => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+
+  // Ghi âm cho chế độ "AI nghe": bấm lần 1 bắt đầu, bấm lần 2 xong → trả base64 WAV (hoặc null nếu huỷ)
+  async function recordWith(b, hintText) {
+    if (Speech.isRecording()) { Speech.stopRecording(); return undefined; }
+    let ctrl;
+    const bar = el("div", "levelbar"); const lv = el("div"); bar.append(lv);
+    const info = el("div", "hint", hintText);
+    try {
+      ctrl = await Speech.record({
+        onLevel: (p, sec) => {
+          lv.style.width = Math.min(100, p * 250) + "%";
+          setMic(b, true, "⏺ " + fmtSec(sec) + " · nói xong thì bấm vào đây ✓");
+        }
+      });
+    } catch (e) { panelSet(el("div", "err", e.message)); return null; }
+    setMic(b, true, "⏺ 0:00 · nói xong thì bấm vào đây ✓");
+    panelSet(info, bar, cancelBtn());
+    const res = await ctrl.done;
+    setMic(b, false);
+    if (!res) { panelSet(); return null; }
+    if (res.seconds < 0.6) { panelSet(el("div", "err", "Ghi âm ngắn quá, bấm lại rồi nói nhé.")); return null; }
+    panelSet();
+    return res.wav;
+  }
+
   async function speakTurn(mic) {
     if (chat.busy) return;
-    panelSet();
+    if (state.hearMode === "ai" && AI.hasKey()) {
+      const wav = await recordWith(mic, "Cứ nói thoải mái, dừng suy nghĩ cũng được. App sẽ gửi giọng cho " + chat.ch.name + " nghe.");
+      if (wav) sendUser(null, wav);
+      return;
+    }
+    if (!Speech.isListening()) panelSet(el("div", "hint", "Mời bạn nói… dừng suy nghĩ cũng được."), cancelBtn());
     const r = await listenWith(mic, {
       lang: CONFIG.speech.listenLang,
-      onInterim: (t) => panelSet(el("div", "hint", "Đang nghe: " + t))
+      long: true,
+      onInterim: (t) => panelSet(el("div", "hint", "Đang nghe: " + t), cancelBtn())
     });
     if (!r) return;
     if (r.cancelled) return panelSet();
@@ -282,9 +315,12 @@
     sendUser(r.alts[0]);
   }
 
-  async function sendUser(text) {
+  // text: câu đã nhận; audio: bản ghi (AI sẽ tự nghe và điền chữ)
+  async function sendUser(text, audio) {
     if (chat.busy) return;
-    chat.msgs.push({ role: "me", en: text });
+    const msg = { role: "me", en: text || "🎤 …" };
+    chat.msgs.push(msg);
+    if (audio) chat.pending = { msg, audio };
     saveChat();
     await askAI();
   }
@@ -297,8 +333,11 @@
     chat.busy = true;
     renderMsgs();
     const c = chat;
+    const pend = c.pending;
     try {
-      const r = await AI.chatTurn(c.ch, c.msgs, userName());
+      const msgs = pend ? c.msgs.filter((m) => m !== pend.msg) : c.msgs;
+      const r = await AI.chatTurn(c.ch, msgs, userName(), pend && pend.audio);
+      if (pend) { pend.msg.en = r.heard || "(không nghe rõ)"; c.pending = null; }
       c.msgs.push({ role: "ai", en: r.en, vi: r.vi, suggestions: r.suggestions });
       c.busy = false;
       if (chat !== c) { state.chats[c.ch.id] = c.msgs; persist(); return; }
@@ -340,25 +379,41 @@
 
   async function vietMode(b) {
     if (chat.busy) return;
+    if (Speech.isRecording()) { Speech.stopRecording(); return; }
     if (Speech.isListening()) { Speech.finish(); return; }
+    if (!AI.hasKey()) return panelSet(el("div", "err", "Chưa có API key. Vào ⚙️ Cài đặt để dán key."));
     b.classList.add("listening");
     const old = b.textContent;
-    b.textContent = "🇻🇳 Đang nghe tiếng Việt…";
-    panelSet(el("div", "hint", "Nói câu bạn muốn nói bằng tiếng Việt…"));
-    const r = await Speech.listen({
-      lang: CONFIG.speech.vietLang,
-      onInterim: (t) => panelSet(el("div", "hint", "Bạn nói: " + t))
-    });
-    b.classList.remove("listening");
-    b.textContent = old;
-    if (r.cancelled) return panelSet();
-    if (r.error) return panelSet(el("div", "err", r.error));
-    const viText = r.alts[0];
-    panelSet(el("div", "hint", "Bạn muốn nói: “" + viText + "”"), el("div", "hint", "Đang tìm cách nói tiếng Anh…"));
+    b.textContent = "🇻🇳 Nói xong bấm đây ✓";
+    let viText = null, audio = null;
+    if (state.hearMode === "ai") {
+      const rec = await Speech.record({}).catch((e) => { panelSet(el("div", "err", e.message)); return null; });
+      if (rec) {
+        panelSet(el("div", "hint", "Nói câu bạn muốn nói bằng tiếng Việt… nói xong bấm lại nút 🇻🇳."), cancelBtn());
+        const res = await rec.done;
+        if (res && res.seconds >= 0.6) audio = res.wav;
+      }
+      b.classList.remove("listening");
+      b.textContent = old;
+      if (!audio) return panelSet();
+    } else {
+      panelSet(el("div", "hint", "Nói câu bạn muốn nói bằng tiếng Việt… nói xong bấm lại nút 🇻🇳."), cancelBtn());
+      const r = await Speech.listen({
+        lang: CONFIG.speech.vietLang,
+        long: true,
+        onInterim: (t) => panelSet(el("div", "hint", "Bạn nói: " + t), cancelBtn())
+      });
+      b.classList.remove("listening");
+      b.textContent = old;
+      if (r.cancelled) return panelSet();
+      if (r.error) return panelSet(el("div", "err", r.error));
+      viText = r.alts[0];
+    }
+    panelSet(el("div", "hint", viText ? "Bạn muốn nói: “" + viText + "”" : "Đã ghi âm."), el("div", "hint", "Đang tìm cách nói tiếng Anh…"));
     try {
-      const h = await AI.vietHelp(chat.ch, chat.msgs, viText, userName());
+      const h = await AI.vietHelp(chat.ch, chat.msgs, viText, userName(), audio);
       const wrap = el("div", "help");
-      wrap.append(el("div", "panel-title", "🇻🇳 “" + viText + "”"));
+      wrap.append(el("div", "panel-title", "🇻🇳 “" + h.heard + "”"));
       wrap.append(el("div", "help-label", "Cách nói đơn giản"));
       wrap.append(practiceWidget(h.simple, { onSend: (t) => { panelSet(); sendUser(t); } }));
       if (h.standard && h.standard.toLowerCase() !== h.simple.toLowerCase()) {
@@ -510,6 +565,29 @@
     r.addEventListener("change", () => { state.rateChat = parseFloat(r.value); persist(); Speech.speak("Hello! How are you today?", { rate: state.rateChat }); });
     sRate.append(r, rv);
     a.append(sRate);
+
+    // Cách nghe giọng
+    const sHear = el("section", "set");
+    sHear.append(el("h2", null, "👂 Ai nghe giọng bạn khi trò chuyện?"));
+    [
+      ["device", "📱 Điện thoại nghe", "Miễn phí, thấy chữ ngay khi nói. Hay nghe sai tên riêng, địa danh."],
+      ["ai", "✨ Gemini nghe", "Nghe đúng tên và địa danh hơn nhiều. Gửi kèm lượt trả lời nên không tốn thêm lượt AI. Chữ hiện sau khi gửi."]
+    ].forEach(([id, label, desc]) => {
+      const opt = el("label", "opt" + (state.hearMode === id ? " on" : ""));
+      const radio = el("input");
+      radio.type = "radio"; radio.name = "hear"; radio.checked = state.hearMode === id;
+      radio.addEventListener("change", () => {
+        state.hearMode = id; persist();
+        sHear.querySelectorAll(".opt").forEach((o) => o.classList.toggle("on", o === opt));
+        toast("Đã chọn: " + label);
+      });
+      const txt = el("div");
+      txt.append(el("div", "opt-title", label), el("div", "opt-desc", desc));
+      opt.append(radio, txt);
+      sHear.append(opt);
+    });
+    sHear.append(el("div", "hint left", "Phần luyện câu mẫu và chấm điểm vẫn dùng điện thoại nghe (miễn phí)."));
+    a.append(sHear);
 
     // Mic
     const sMic = el("section", "set");
